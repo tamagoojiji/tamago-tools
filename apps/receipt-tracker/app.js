@@ -6,7 +6,7 @@ var ReceiptApp = (function () {
   "use strict";
 
   // === 設定 ===
-  var GAS_URL = ""; // デプロイ後にURLを設定
+  var GAS_URL = "https://script.google.com/macros/s/AKfycbwvemxonI88X44s0mgJ-mkLCHDvXnhqieExvsv026ZKaQU_462bePBPQqucu1mPslhFPA/exec";
 
   var currentReceipt = null;
   var userId = null;

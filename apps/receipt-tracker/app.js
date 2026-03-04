@@ -141,7 +141,8 @@ var ReceiptApp = (function () {
       })
       .catch(function (err) {
         document.getElementById("spinner").classList.add("hidden");
-        FormUtils.showToast("通信エラーが発生しました");
+        FormUtils.showToast("スキャンエラー: " + (err.message || err));
+        console.error("scan error:", err);
       });
 
       // input をリセット
@@ -275,10 +276,11 @@ var ReceiptApp = (function () {
         FormUtils.showToast(res.error || "保存に失敗しました");
       }
     })
-    .catch(function () {
+    .catch(function (err) {
       document.getElementById("spinner").classList.add("hidden");
       document.querySelector("#spinner .spinner-text").textContent = "レシートを読み取っています...";
-      FormUtils.showToast("通信エラーが発生しました");
+      FormUtils.showToast("保存エラー: " + (err.message || err));
+      console.error("save error:", err);
     });
   }
 
@@ -363,8 +365,9 @@ var ReceiptApp = (function () {
         FormUtils.showToast(res.error || "削除に失敗しました");
       }
     })
-    .catch(function () {
-      FormUtils.showToast("通信エラーが発生しました");
+    .catch(function (err) {
+      FormUtils.showToast("削除エラー: " + (err.message || err));
+      console.error("delete error:", err);
     });
   }
 

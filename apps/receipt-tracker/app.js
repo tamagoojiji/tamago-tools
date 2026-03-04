@@ -11,23 +11,48 @@ var ReceiptApp = (function () {
   var currentReceipt = null;
   var userId = null;
 
-  // カテゴリ別アイコン・色
+  // 勘定科目別アイコン・色
   var CATEGORY_MAP = {
-    "食費":     { icon: "🍽", color: "#E8F5E9" },
-    "交通費":   { icon: "🚃", color: "#E3F2FD" },
-    "日用品":   { icon: "🧴", color: "#FFF3E0" },
-    "交際費":   { icon: "🍻", color: "#FCE4EC" },
-    "通信費":   { icon: "📱", color: "#F3E5F5" },
-    "光熱費":   { icon: "💡", color: "#FFFDE7" },
-    "医療費":   { icon: "🏥", color: "#E0F7FA" },
-    "衣服":     { icon: "👕", color: "#F1F8E9" },
-    "教育":     { icon: "📚", color: "#EDE7F6" },
-    "事業経費": { icon: "💼", color: "#EFEBE9" },
-    "その他":   { icon: "📦", color: "#F5F5F5" }
+    "仕入高":     { icon: "📦", color: "#EFEBE9" },
+    "租税公課":   { icon: "🏛", color: "#F5F5F5" },
+    "水道光熱費": { icon: "💡", color: "#FFFDE7" },
+    "旅費交通費": { icon: "🚃", color: "#E3F2FD" },
+    "通信費":     { icon: "📱", color: "#F3E5F5" },
+    "広告宣伝費": { icon: "📢", color: "#FFF3E0" },
+    "接待交際費": { icon: "🍻", color: "#FCE4EC" },
+    "損害保険料": { icon: "🛡", color: "#E8EAF6" },
+    "修繕費":     { icon: "🔧", color: "#E0F2F1" },
+    "消耗品費":   { icon: "🧴", color: "#FFF8E1" },
+    "福利厚生費": { icon: "🏥", color: "#E0F7FA" },
+    "外注工賃":   { icon: "🤝", color: "#F1F8E9" },
+    "地代家賃":   { icon: "🏠", color: "#EDE7F6" },
+    "新聞図書費": { icon: "📚", color: "#E8F5E9" },
+    "会議費":     { icon: "☕", color: "#FBE9E7" },
+    "車両費":     { icon: "🚗", color: "#E3F2FD" },
+    "雑費":       { icon: "📋", color: "#F5F5F5" }
   };
 
   // 月次ナビ用
   var currentMonth = null;
+
+  // === GAS POSTヘルパー（リダイレクト対応） ===
+  function gasPostJson(data) {
+    return fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(data)
+    })
+    .then(function (r) {
+      return r.text();
+    })
+    .then(function (text) {
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        return { ok: false, error: "レスポンス解析エラー" };
+      }
+    });
+  }
 
   // === 初期化 ===
   function start() {
@@ -100,17 +125,12 @@ var ReceiptApp = (function () {
       }
 
       // OCR リクエスト
-      fetch(GAS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({
-          action: "scan",
-          userId: userId,
-          imageBase64: base64,
-          mimeType: mimeType
-        })
+      gasPostJson({
+        action: "scan",
+        userId: userId,
+        imageBase64: base64,
+        mimeType: mimeType
       })
-      .then(function (r) { return r.json(); })
       .then(function (res) {
         document.getElementById("spinner").classList.add("hidden");
         if (res.ok) {
@@ -232,23 +252,18 @@ var ReceiptApp = (function () {
     document.getElementById("spinner").classList.remove("hidden");
     document.querySelector("#spinner .spinner-text").textContent = "保存しています...";
 
-    fetch(GAS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "save",
-        userId: userId,
-        receipt: {
-          date: date,
-          store: store,
-          category: category,
-          total: Number(total) || 0,
-          items: items,
-          memo: memo
-        }
-      })
+    gasPostJson({
+      action: "save",
+      userId: userId,
+      receipt: {
+        date: date,
+        store: store,
+        category: category,
+        total: Number(total) || 0,
+        items: items,
+        memo: memo
+      }
     })
-    .then(function (r) { return r.json(); })
     .then(function (res) {
       document.getElementById("spinner").classList.add("hidden");
       document.querySelector("#spinner .spinner-text").textContent = "レシートを読み取っています...";
@@ -335,16 +350,11 @@ var ReceiptApp = (function () {
     if (!confirm("このレシートを削除しますか？")) return;
     if (!GAS_URL) return;
 
-    fetch(GAS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "delete",
-        userId: userId,
-        receiptId: receiptId
-      })
+    gasPostJson({
+      action: "delete",
+      userId: userId,
+      receiptId: receiptId
     })
-    .then(function (r) { return r.json(); })
     .then(function (res) {
       if (res.ok) {
         FormUtils.showToast("削除しました");

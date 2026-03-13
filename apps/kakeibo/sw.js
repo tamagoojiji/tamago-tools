@@ -1,4 +1,4 @@
-var CACHE_NAME = "kakeibo-v1";
+var CACHE_NAME = "kakeibo-v2";
 var ASSETS = [
   "./",
   "./index.html",

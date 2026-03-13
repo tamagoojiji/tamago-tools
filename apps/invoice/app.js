@@ -15,7 +15,9 @@ var InvoiceApp = (function () {
 
   // === 初期化 ===
   function init() {
-    userId = FormUtils.getUserId();
+    // URLパラメータでuserIdを指定可能（テスト用）
+    var urlParams = new URLSearchParams(window.location.search);
+    userId = urlParams.get("userId") || FormUtils.getUserId();
     loadInvoices();
     loadProfile();
   }

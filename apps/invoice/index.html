@@ -323,42 +323,67 @@
         <h2>請求書を作成</h2>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">請求先（宛名）</label>
-        <input type="text" id="inv-client" class="form-input" placeholder="例：株式会社〇〇">
+      <!-- 請求先情報 -->
+      <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:16px;">
+        <label class="form-label" style="font-size:15px;font-weight:bold;margin-bottom:10px;">請求先</label>
+        <div class="form-group">
+          <label class="form-label" style="font-size:12px;">会社名・屋号</label>
+          <input type="text" id="inv-client" class="form-input" placeholder="例：株式会社〇〇">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size:12px;">郵便番号</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="inv-client-zip" class="form-input" placeholder="1600023" maxlength="8" inputmode="numeric" style="width:140px;" oninput="InvoiceApp.onClientZipInput(this)">
+            <button class="btn btn-outline" onclick="InvoiceApp.searchClientZip()" style="padding:8px 12px;font-size:13px;white-space:nowrap;">住所検索</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size:12px;">住所</label>
+          <input type="text" id="inv-client-address" class="form-input" placeholder="例：東京都新宿区西新宿...">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size:12px;">建物名（任意）</label>
+          <input type="text" id="inv-client-building" class="form-input" placeholder="例：〇〇ビル6階">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size:12px;">担当者名（任意）</label>
+          <input type="text" id="inv-client-person" class="form-input" placeholder="例：山田 太郎 様">
+        </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">請求先住所（任意）</label>
-        <input type="text" id="inv-client-address" class="form-input" placeholder="例：東京都渋谷区...">
-      </div>
+
+      <!-- 発行日・支払期限 -->
       <div class="form-row">
         <div class="form-group" style="flex:1;">
-          <label class="form-label">発行日</label>
-          <input type="date" id="inv-issue-date" class="form-input">
+          <label class="form-label">請求日</label>
+          <input type="date" id="inv-issue-date" class="form-input" onchange="InvoiceApp.onIssueDateChange()">
         </div>
         <div class="form-group" style="flex:1;">
-          <label class="form-label">支払期限</label>
+          <label class="form-label">お支払期限</label>
           <input type="date" id="inv-due-date" class="form-input">
         </div>
       </div>
 
+      <!-- 品目 -->
       <label class="form-label" style="margin-bottom:8px;">品目</label>
       <div id="items-container"></div>
       <button class="add-item-btn" onclick="InvoiceApp.addItemRow()">＋ 品目を追加</button>
 
+      <!-- 税率 -->
       <label class="form-label">消費税率</label>
       <div class="tax-rate-group">
         <button class="tax-rate-btn active" onclick="InvoiceApp.setTaxRate(10, this)">10%</button>
         <button class="tax-rate-btn" onclick="InvoiceApp.setTaxRate(8, this)">8%（軽減）</button>
-        <button class="tax-rate-btn" onclick="InvoiceApp.setTaxRate(0, this)">なし</button>
+        <button class="tax-rate-btn" onclick="InvoiceApp.setTaxRate(0, this)">なし（非課税）</button>
       </div>
 
+      <!-- 金額サマリー -->
       <div class="amount-summary">
         <div class="amount-row"><span>小計</span><span id="sum-subtotal">¥0</span></div>
-        <div class="amount-row"><span>消費税</span><span id="sum-tax">¥0</span></div>
+        <div class="amount-row"><span>消費税額合計</span><span id="sum-tax">¥0</span></div>
         <div class="amount-row total"><span>合計</span><span id="sum-total">¥0</span></div>
       </div>
 
+      <!-- 備考 -->
       <div class="form-group">
         <label class="form-label">備考（任意）</label>
         <textarea id="inv-notes" class="form-input" rows="2" placeholder="例：お振込手数料はご負担ください"></textarea>
@@ -383,7 +408,8 @@
           <span id="prev-dates"></span>
         </div>
         <div class="preview-client" id="prev-client"></div>
-        <div id="prev-client-address" style="font-size:13px;color:var(--text-light);margin-bottom:12px;"></div>
+        <div id="prev-client-address" style="font-size:13px;color:var(--text-light);margin-bottom:2px;"></div>
+        <div id="prev-client-person" style="font-size:13px;color:var(--text-light);margin-bottom:12px;"></div>
 
         <div class="preview-total-box">
           <div class="preview-total-label">ご請求金額</div>
@@ -392,7 +418,7 @@
 
         <table class="preview-table">
           <thead>
-            <tr><th>品目</th><th>数量</th><th>単価</th><th>金額</th></tr>
+            <tr><th>納品日</th><th>品目</th><th>数量</th><th>単価</th><th>金額</th></tr>
           </thead>
           <tbody id="prev-items"></tbody>
         </table>

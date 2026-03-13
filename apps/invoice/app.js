@@ -27,12 +27,24 @@ var InvoiceApp = (function () {
     var dd = ("0" + today.getDate()).slice(-2);
     document.getElementById("inv-issue-date").value = yyyy + "-" + mm + "-" + dd;
 
-    // 支払期限: 翌月末
-    var nextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-    var ny = nextMonth.getFullYear();
-    var nm = ("0" + (nextMonth.getMonth() + 1)).slice(-2);
-    var nd = ("0" + nextMonth.getDate()).slice(-2);
-    document.getElementById("inv-due-date").value = ny + "-" + nm + "-" + nd;
+    // 支払期限: 発行日の1ヶ月後（同日）
+    updateDueDate(today);
+  }
+
+  function onIssueDateChange() {
+    var issueDate = document.getElementById("inv-issue-date").value;
+    if (issueDate) {
+      updateDueDate(new Date(issueDate));
+    }
+  }
+
+  function updateDueDate(baseDate) {
+    var due = new Date(baseDate);
+    due.setMonth(due.getMonth() + 1);
+    var dy = due.getFullYear();
+    var dm = ("0" + (due.getMonth() + 1)).slice(-2);
+    var dd = ("0" + due.getDate()).slice(-2);
+    document.getElementById("inv-due-date").value = dy + "-" + dm + "-" + dd;
   }
 
   // === 事業者情報画面 ===
@@ -55,9 +67,15 @@ var InvoiceApp = (function () {
         '<button class="item-remove-btn" onclick="InvoiceApp.removeItem(' + idx + ')">×</button>' +
       '</div>' +
       '<div class="item-fields">' +
-        '<div class="item-name-field">' +
-          '<label>品名</label>' +
-          '<input type="text" id="item-name-' + idx + '" placeholder="例：Webサイト制作" value="' + ((item && item.name) || '') + '" oninput="InvoiceApp.calcTotal()">' +
+        '<div style="grid-column:1/-1;display:flex;gap:8px;">' +
+          '<div style="flex:1;"><label>納品日</label>' +
+          '<input type="date" id="item-date-' + idx + '" value="' + ((item && item.deliveryDate) || '') + '"></div>' +
+          '<div style="flex:2;"><label>品目・納品書番号</label>' +
+          '<input type="text" id="item-name-' + idx + '" placeholder="例：サポート費" value="' + ((item && item.name) || '') + '" oninput="InvoiceApp.calcTotal()"></div>' +
+        '</div>' +
+        '<div>' +
+          '<label>単価</label>' +
+          '<input type="number" id="item-price-' + idx + '" value="' + ((item && item.unitPrice) || '') + '" placeholder="0" oninput="InvoiceApp.calcTotal()">' +
         '</div>' +
         '<div>' +
           '<label>数量</label>' +
@@ -66,10 +84,6 @@ var InvoiceApp = (function () {
         '<div>' +
           '<label>単位</label>' +
           '<input type="text" id="item-unit-' + idx + '" value="' + ((item && item.unit) || '式') + '" placeholder="式">' +
-        '</div>' +
-        '<div>' +
-          '<label>単価</label>' +
-          '<input type="number" id="item-price-' + idx + '" value="' + ((item && item.unitPrice) || '') + '" placeholder="0" oninput="InvoiceApp.calcTotal()">' +
         '</div>' +
       '</div>';
 
@@ -93,13 +107,15 @@ var InvoiceApp = (function () {
       var qty = Number(document.getElementById("item-qty-" + id).value) || 0;
       var unit = document.getElementById("item-unit-" + id).value.trim() || "式";
       var price = Number(document.getElementById("item-price-" + id).value) || 0;
+      var deliveryDate = document.getElementById("item-date-" + id).value || "";
       if (name || price > 0) {
         items.push({
           name: name,
           quantity: qty,
           unit: unit,
           unitPrice: price,
-          amount: qty * price
+          amount: qty * price,
+          deliveryDate: deliveryDate
         });
       }
     }
@@ -149,7 +165,10 @@ var InvoiceApp = (function () {
 
   function clearForm() {
     document.getElementById("inv-client").value = "";
+    document.getElementById("inv-client-zip").value = "";
     document.getElementById("inv-client-address").value = "";
+    document.getElementById("inv-client-building").value = "";
+    document.getElementById("inv-client-person").value = "";
     document.getElementById("inv-notes").value = "";
     document.getElementById("items-container").innerHTML = "";
     itemCounter = 0;
@@ -184,10 +203,21 @@ var InvoiceApp = (function () {
     var issueDate = document.getElementById("inv-issue-date").value;
     var dueDate = document.getElementById("inv-due-date").value;
 
+    var clientZip = document.getElementById("inv-client-zip").value.trim();
+    var clientBuilding = document.getElementById("inv-client-building").value.trim();
+    var clientPerson = document.getElementById("inv-client-person").value.trim();
+    var clientAddr = document.getElementById("inv-client-address").value.trim();
+
     document.getElementById("prev-number").textContent = editingInvoiceId ? "(既存)" : "(保存時に自動採番)";
     document.getElementById("prev-dates").textContent = "発行: " + issueDate + " / 期限: " + dueDate;
     document.getElementById("prev-client").textContent = client + " 御中";
-    document.getElementById("prev-client-address").textContent = document.getElementById("inv-client-address").value;
+
+    var addrParts = [];
+    if (clientZip) addrParts.push("〒" + clientZip);
+    if (clientAddr) addrParts.push(clientAddr);
+    if (clientBuilding) addrParts.push(clientBuilding);
+    document.getElementById("prev-client-address").textContent = addrParts.join(" ");
+    document.getElementById("prev-client-person").textContent = clientPerson ? clientPerson : "";
 
     document.getElementById("prev-total").textContent = "¥" + total.toLocaleString();
     document.getElementById("prev-subtotal").textContent = "¥" + subtotal.toLocaleString();
@@ -200,6 +230,7 @@ var InvoiceApp = (function () {
     for (var j = 0; j < items.length; j++) {
       var tr = document.createElement("tr");
       tr.innerHTML =
+        "<td>" + (items[j].deliveryDate || "") + "</td>" +
         "<td>" + escapeHtml(items[j].name) + "</td>" +
         "<td>" + items[j].quantity + " " + escapeHtml(items[j].unit) + "</td>" +
         "<td>¥" + items[j].unitPrice.toLocaleString() + "</td>" +
@@ -240,7 +271,10 @@ var InvoiceApp = (function () {
     return {
       id: editingInvoiceId || "",
       clientName: document.getElementById("inv-client").value.trim(),
+      clientZip: document.getElementById("inv-client-zip").value.trim(),
       clientAddress: document.getElementById("inv-client-address").value.trim(),
+      clientBuilding: document.getElementById("inv-client-building").value.trim(),
+      clientPerson: document.getElementById("inv-client-person").value.trim(),
       issueDate: document.getElementById("inv-issue-date").value,
       dueDate: document.getElementById("inv-due-date").value,
       items: items,
@@ -393,7 +427,8 @@ var InvoiceApp = (function () {
     var itemRows = "";
     for (var i = 0; i < items.length; i++) {
       itemRows +=
-        "<tr><td>" + escapeHtml(items[i].name) + "</td>" +
+        "<tr><td>" + (items[i].deliveryDate || "") + "</td>" +
+        "<td>" + escapeHtml(items[i].name) + "</td>" +
         "<td>" + items[i].quantity + " " + escapeHtml(items[i].unit || "") + "</td>" +
         "<td>¥" + Number(items[i].unitPrice).toLocaleString() + "</td>" +
         "<td>¥" + Number(items[i].amount).toLocaleString() + "</td></tr>";
@@ -402,18 +437,29 @@ var InvoiceApp = (function () {
     var statusText = inv.status === "draft" ? "下書き" : inv.status === "sent" ? "送付済" : "入金済";
     var statusClass = "status-" + inv.status;
 
+    var detailAddr = [];
+    if (inv.clientZip) detailAddr.push("〒" + inv.clientZip);
+    if (inv.clientAddress) detailAddr.push(inv.clientAddress);
+    if (inv.clientBuilding) detailAddr.push(inv.clientBuilding);
+    var detailAddrHtml = detailAddr.length > 0
+      ? '<div style="font-size:13px;color:var(--text-light);margin-bottom:2px;">' + escapeHtml(detailAddr.join(" ")) + '</div>'
+      : '';
+    var detailPersonHtml = inv.clientPerson
+      ? '<div style="font-size:13px;color:var(--text-light);margin-bottom:12px;">' + escapeHtml(inv.clientPerson) + '</div>'
+      : '';
+
     document.getElementById("detail-preview").innerHTML =
       '<div class="preview-meta">' +
         '<span>発行: ' + inv.issueDate + '</span>' +
         '<span class="status-badge ' + statusClass + '">' + statusText + '</span>' +
       '</div>' +
       '<div class="preview-client">' + escapeHtml(inv.clientName) + ' 御中</div>' +
-      (inv.clientAddress ? '<div style="font-size:13px;color:var(--text-light);margin-bottom:12px;">' + escapeHtml(inv.clientAddress) + '</div>' : '') +
+      detailAddrHtml + detailPersonHtml +
       '<div class="preview-total-box">' +
         '<div class="preview-total-label">ご請求金額</div>' +
         '<div class="preview-total-amount">¥' + Number(inv.total).toLocaleString() + '</div>' +
       '</div>' +
-      '<table class="preview-table"><thead><tr><th>品目</th><th>数量</th><th>単価</th><th>金額</th></tr></thead>' +
+      '<table class="preview-table"><thead><tr><th>納品日</th><th>品目</th><th>数量</th><th>単価</th><th>金額</th></tr></thead>' +
       '<tbody>' + itemRows + '</tbody></table>' +
       '<div class="amount-summary">' +
         '<div class="amount-row"><span>小計</span><span>¥' + Number(inv.subtotal).toLocaleString() + '</span></div>' +
@@ -483,7 +529,10 @@ var InvoiceApp = (function () {
     editingInvoiceId = currentInvoice.id;
 
     document.getElementById("inv-client").value = currentInvoice.clientName || "";
+    document.getElementById("inv-client-zip").value = currentInvoice.clientZip || "";
     document.getElementById("inv-client-address").value = currentInvoice.clientAddress || "";
+    document.getElementById("inv-client-building").value = currentInvoice.clientBuilding || "";
+    document.getElementById("inv-client-person").value = currentInvoice.clientPerson || "";
     document.getElementById("inv-issue-date").value = currentInvoice.issueDate || "";
     document.getElementById("inv-due-date").value = currentInvoice.dueDate || "";
     document.getElementById("inv-notes").value = currentInvoice.notes || "";
@@ -595,7 +644,40 @@ var InvoiceApp = (function () {
       });
   }
 
-  // === 郵便番号検索 ===
+  // === 請求先 郵便番号検索 ===
+  function onClientZipInput(el) {
+    el.value = el.value.replace(/[０-９]/g, function (s) {
+      return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+    }).replace(/[^0-9\-]/g, "");
+    var digits = el.value.replace(/-/g, "");
+    if (digits.length === 7) searchClientZip();
+  }
+
+  function searchClientZip() {
+    var zip = document.getElementById("inv-client-zip").value.replace(/[^0-9]/g, "");
+    if (zip.length !== 7) {
+      FormUtils.showToast("7桁の郵便番号を入力してください");
+      return;
+    }
+    fetch("https://zipcloud.ibsnet.co.jp/api/search?zipcode=" + zip)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.results && data.results.length > 0) {
+          var r = data.results[0];
+          var address = r.address1 + r.address2 + r.address3;
+          document.getElementById("inv-client-address").value = address;
+          document.getElementById("inv-client-address").focus();
+          FormUtils.showToast("住所を取得しました");
+        } else {
+          FormUtils.showToast("該当する住所が見つかりません");
+        }
+      })
+      .catch(function () {
+        FormUtils.showToast("住所検索に失敗しました");
+      });
+  }
+
+  // === 事業者 郵便番号検索 ===
   function onZipInput(el) {
     // 数字とハイフンのみ許可、全角→半角変換
     el.value = el.value.replace(/[０-９]/g, function (s) {
@@ -913,6 +995,9 @@ var InvoiceApp = (function () {
     editInvoice: editInvoice,
     deleteInvoice: deleteInvoice,
     saveProfile: saveProfile,
+    onClientZipInput: onClientZipInput,
+    searchClientZip: searchClientZip,
+    onIssueDateChange: onIssueDateChange,
     onZipInput: onZipInput,
     searchZip: searchZip,
     formatPhone: formatPhone,

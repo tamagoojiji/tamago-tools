@@ -132,7 +132,7 @@ var KakeiboApp = (function () {
           count++;
         }
       });
-      document.getElementById("today-total").textContent = "¥" + total.toLocaleString();
+      document.getElementById("today-total").textContent = total.toLocaleString() + "円";
       document.getElementById("today-count").textContent = count + "件";
     });
   }
@@ -366,7 +366,7 @@ var KakeiboApp = (function () {
 
       if (txs.length === 0) {
         container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📝</div><div class="empty-state-text">この月のデータはありません</div></div>';
-        document.getElementById("history-month-total").textContent = "¥0";
+        document.getElementById("history-month-total").textContent = "0円";
         return;
       }
 
@@ -392,13 +392,13 @@ var KakeiboApp = (function () {
             '<div class="data-card-sub">' + tx.category + '</div>' +
           '</div>' +
           '<div class="data-card-right">' +
-            '<div class="data-card-amount">¥' + tx.total.toLocaleString() + '</div>' +
+            '<div class="data-card-amount">' + tx.total.toLocaleString() + '円</div>' +
           '</div>' +
         '</div>';
       });
 
       container.innerHTML = html;
-      document.getElementById("history-month-total").textContent = "¥" + total.toLocaleString();
+      document.getElementById("history-month-total").textContent = total.toLocaleString() + "円";
     });
   }
 
@@ -480,9 +480,9 @@ var KakeiboApp = (function () {
       // 統計カード
       var statsHtml =
         '<div class="stat-row">' +
-          '<div class="stat-card"><div class="stat-label">合計</div><div class="stat-value">¥' + total.toLocaleString() + '</div></div>' +
+          '<div class="stat-card"><div class="stat-label">合計</div><div class="stat-value">' + total.toLocaleString() + '円</div></div>' +
           '<div class="stat-card"><div class="stat-label">件数</div><div class="stat-value">' + txs.length + '<span class="stat-unit">件</span></div></div>' +
-          '<div class="stat-card"><div class="stat-label">平均</div><div class="stat-value">¥' + avg.toLocaleString() + '</div></div>' +
+          '<div class="stat-card"><div class="stat-label">平均</div><div class="stat-value">' + avg.toLocaleString() + '円</div></div>' +
         '</div>';
 
       // 予算比較
@@ -499,7 +499,7 @@ var KakeiboApp = (function () {
             '<div class="stat-row">' +
               '<div class="stat-card" style="flex:1">' +
                 '<div class="stat-label">予算残り</div>' +
-                '<div class="stat-value" style="color:' + (remaining < 0 ? "var(--danger)" : "var(--success)") + '">¥' + remaining.toLocaleString() + '</div>' +
+                '<div class="stat-value" style="color:' + (remaining < 0 ? "var(--danger)" : "var(--success)") + '">' + remaining.toLocaleString() + '円</div>' +
                 '<div style="margin-top:8px;height:8px;background:#f0ebe4;border-radius:4px;overflow:hidden">' +
                   '<div style="height:100%;width:' + Math.min(pct, 100) + '%;background:' + barColor + ';border-radius:4px"></div>' +
                 '</div>' +
@@ -525,7 +525,7 @@ var KakeiboApp = (function () {
             '<div class="bar-row">' +
               '<div class="bar-label">' + icon + '</div>' +
               '<div class="bar-track"><div class="bar-fill" style="width:' + pctCat + '%;background:' + KakeiboChart.getColor(cd.category) + '"></div></div>' +
-              '<div class="bar-value">¥' + cd.total.toLocaleString() + '</div>' +
+              '<div class="bar-value">' + cd.total.toLocaleString() + '円</div>' +
             '</div>';
         });
 

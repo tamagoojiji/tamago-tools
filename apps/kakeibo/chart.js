@@ -67,7 +67,7 @@ var KakeiboChart = (function () {
               label: function (ctx) {
                 var total = ctx.dataset.data.reduce(function (a, b) { return a + b; }, 0);
                 var pct = Math.round(ctx.raw / total * 100);
-                return ctx.label + ": ¥" + ctx.raw.toLocaleString() + " (" + pct + "%)";
+                return ctx.label + ": " + ctx.raw.toLocaleString() + "円 (" + pct + "%)";
               }
             }
           }
@@ -111,7 +111,7 @@ var KakeiboChart = (function () {
             beginAtZero: true,
             ticks: {
               font: { size: 10 },
-              callback: function (v) { return "¥" + v.toLocaleString(); }
+              callback: function (v) { return v.toLocaleString() + "円"; }
             }
           }
         }
@@ -176,7 +176,7 @@ var KakeiboChart = (function () {
             beginAtZero: true,
             ticks: {
               font: { size: 10 },
-              callback: function (v) { return "¥" + v.toLocaleString(); }
+              callback: function (v) { return v.toLocaleString() + "円"; }
             }
           }
         }

@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>かんたん家計簿 - たまごツール</title>
+  <link rel="stylesheet" href="../../style.css?v=2">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#F5A623">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    /* タブを下部固定ナビに */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--card-bg);
+      display: flex;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.08);
+      z-index: 100;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .bottom-nav .tab-btn {
+      flex: 1;
+      padding: 8px 4px 6px;
+      border: none;
+      background: none;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-light);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      border-radius: 0;
+    }
+    .bottom-nav .tab-btn.active {
+      color: var(--primary);
+      background: none;
+    }
+    .bottom-nav .tab-btn-icon {
+      font-size: 20px;
+    }
+    .main-container {
+      padding-bottom: 72px;
+    }
+
+    /* 入力タブ: カメラエリア */
+    .camera-area {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+    .camera-area .btn {
+      width: 100%;
+      font-size: 16px;
+    }
+
+    /* 今日の合計 */
+    .today-summary {
+      background: linear-gradient(135deg, var(--primary), #FFB74D);
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+      color: #fff;
+      margin-bottom: 16px;
+    }
+    .today-summary-label {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+    .today-summary-amount {
+      font-size: 32px;
+      font-weight: 800;
+      margin: 4px 0;
+    }
+    .today-summary-count {
+      font-size: 12px;
+      opacity: 0.8;
+    }
+
+    /* 手入力フォーム */
+    .manual-form {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .manual-form .form-row {
+      gap: 8px;
+    }
+
+    /* 品目行 */
+    .item-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+      align-items: center;
+    }
+    .item-row .form-input {
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    /* 月ナビ */
+    .month-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .month-nav-btn {
+      background: none;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      font-size: 16px;
+      cursor: pointer;
+      color: var(--text-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .month-nav-label {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--secondary);
+      min-width: 120px;
+      text-align: center;
+    }
+    .month-total {
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-light);
+      margin-bottom: 16px;
+    }
+    .month-total strong {
+      font-size: 20px;
+      color: var(--secondary);
+    }
+
+    /* 設定セクション */
+    .settings-section {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+    .settings-section-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--secondary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .settings-btn {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      margin-bottom: 8px;
+      transition: all 0.2s;
+    }
+    .settings-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .settings-btn.danger {
+      color: var(--danger);
+      border-color: #f8d7da;
+    }
+    .settings-btn.danger:hover {
+      border-color: var(--danger);
+    }
+
+    /* プライバシー説明 */
+    .privacy-note {
+      font-size: 12px;
+      color: var(--text-light);
+      line-height: 1.7;
+      padding: 12px;
+      background: #f8f6f3;
+      border-radius: 10px;
+    }
+    .privacy-note strong {
+      color: var(--secondary);
+    }
+
+    /* 編集画面アクションバー */
+    .edit-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .edit-actions .btn {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <!-- スピナー -->
+  <div id="spinner" class="spinner-overlay hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:200">
+    <div class="spinner" style="width:40px;height:40px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite"></div>
+    <div id="spinner-text" style="margin-top:12px;font-size:14px;color:var(--text-light)">処理中...</div>
+  </div>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner-overlay.hidden { display: none !important; }
+  </style>
+
+  <!-- メイン画面 -->
+  <div id="main-screen" data-screen>
+    <div class="container main-container">
+      <!-- ヘッダー -->
+      <div style="text-align:center;padding:16px 0 8px">
+        <h1 style="font-size:20px;font-weight:800;color:var(--secondary)">かんたん家計簿</h1>
+        <p style="font-size:12px;color:var(--text-light)">レシート撮影 & 手入力でかんたん記録</p>
+      </div>
+
+      <!-- === 入力タブ === -->
+      <div id="tab-input" class="tab-content active">
+        <!-- 今日の合計 -->
+        <div class="today-summary">
+          <div class="today-summary-label">今日の支出</div>
+          <div class="today-summary-amount" id="today-total">¥0</div>
+          <div class="today-summary-count" id="today-count">0件</div>
+        </div>
+
+        <!-- レシート撮影 -->
+        <div class="camera-area">
+          <div style="font-size:36px;margin-bottom:8px">📸</div>
+          <button id="btn-camera" class="btn btn-primary">レシートを撮影</button>
+          <input type="file" id="camera-input" accept="image/*" capture="environment" class="hidden">
+          <p style="font-size:11px;color:var(--text-light);margin-top:8px">AIが自動で金額・カテゴリを読み取ります</p>
+        </div>
+
+        <!-- 手入力 -->
+        <div class="manual-form">
+          <div class="settings-section-title">手入力</div>
+          <div class="form-row">
+            <div class="form-group" style="flex:1">
+              <label class="form-label">日付</label>
+              <input type="date" id="input-date" class="form-input">
+            </div>
+            <div class="form-group" style="flex:1">
+              <label class="form-label">金額</label>
+              <input type="number" id="input-amount" class="form-input" placeholder="¥0" inputmode="numeric">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">カテゴリ</label>
+            <select id="input-category" class="form-select"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">メモ（任意）</label>
+            <input type="text" id="input-memo" class="form-input" placeholder="例: スーパーで買い物">
+          </div>
+          <button id="btn-save-manual" class="btn btn-primary" style="width:100%">保存</button>
+        </div>
+      </div>
+
+      <!-- === 履歴タブ === -->
+      <div id="tab-history" class="tab-content">
+        <div class="month-nav">
+          <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('history',-1)">&lt;</button>
+          <span class="month-nav-label" id="history-month-label"></span>
+          <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('history',1)">&gt;</button>
+        </div>
+        <div class="month-total">合計: <strong id="history-month-total">¥0</strong></div>
+        <div id="history-list"></div>
+      </div>
+
+      <!-- === レポートタブ === -->
+      <div id="tab-report" class="tab-content">
+        <div class="month-nav">
+          <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('report',-1)">&lt;</button>
+          <span class="month-nav-label" id="report-month-label"></span>
+          <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('report',1)">&gt;</button>
+        </div>
+        <div id="report-content"></div>
+      </div>
+
+      <!-- === 設定タブ === -->
+      <div id="tab-settings" class="tab-content">
+        <!-- 予算設定 -->
+        <div class="settings-section">
+          <div class="settings-section-title">💰 月間予算</div>
+          <div class="month-nav" style="margin-bottom:12px">
+            <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('settings',-1)">&lt;</button>
+            <span class="month-nav-label" id="settings-month-label"></span>
+            <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('settings',1)">&gt;</button>
+          </div>
+          <div id="budget-list"></div>
+          <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="KakeiboApp.saveBudgets()">予算を保存</button>
+        </div>
+
+        <!-- データ管理 -->
+        <div class="settings-section">
+          <div class="settings-section-title">📂 データ管理</div>
+          <button class="settings-btn" onclick="KakeiboApp.exportData()">JSONバックアップ</button>
+          <button class="settings-btn" onclick="KakeiboApp.exportCSV()">CSVエクスポート</button>
+          <button class="settings-btn" onclick="KakeiboApp.importData()">バックアップから復元</button>
+          <button class="settings-btn danger" onclick="KakeiboApp.clearAllData()">全データ削除</button>
+        </div>
+
+        <!-- プライバシー -->
+        <div class="settings-section">
+          <div class="settings-section-title">🔒 プライバシー</div>
+          <div class="privacy-note">
+            <strong>データはスマホ内に保存</strong><br>
+            家計データはブラウザ内（IndexedDB）に保存され、外部サーバーには送信されません。<br><br>
+            <strong>レシート撮影時のみ通信</strong><br>
+            レシート画像はAI読み取りのために一時的に送信されますが、処理後すぐに破棄されます。<br><br>
+            <strong>バックアップのお願い</strong><br>
+            ブラウザのキャッシュクリアでデータが消える可能性があります。定期的にJSONバックアップをお取りください。
+          </div>
+        </div>
+
+        <!-- フッター -->
+        <div class="footer">
+          <a href="../../">たまごツール トップ</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 下部タブナビ -->
+    <nav class="bottom-nav">
+      <button class="tab-btn active" data-tab="input" onclick="KakeiboApp.switchTab('input')">
+        <span class="tab-btn-icon">✏️</span>入力
+      </button>
+      <button class="tab-btn" data-tab="history" onclick="KakeiboApp.switchTab('history')">
+        <span class="tab-btn-icon">📋</span>履歴
+      </button>
+      <button class="tab-btn" data-tab="report" onclick="KakeiboApp.switchTab('report')">
+        <span class="tab-btn-icon">📊</span>レポート
+      </button>
+      <button class="tab-btn" data-tab="settings" onclick="KakeiboApp.switchTab('settings')">
+        <span class="tab-btn-icon">⚙️</span>設定
+      </button>
+    </nav>
+  </div>
+
+  <!-- 編集画面 -->
+  <div id="edit-screen" data-screen class="hidden">
+    <div class="container" style="padding-top:16px">
+      <h2 style="font-size:18px;font-weight:700;color:var(--secondary);margin-bottom:16px">記録を編集</h2>
+
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <label class="form-label">日付</label>
+          <input type="date" id="edit-date" class="form-input">
+        </div>
+        <div class="form-group" style="flex:1">
+          <label class="form-label">カテゴリ</label>
+          <select id="edit-category" class="form-select">
+            <option value="食費">🍽 食費</option>
+            <option value="日用品">🧴 日用品</option>
+            <option value="交通費">🚃 交通費</option>
+            <option value="住居費">🏠 住居費</option>
+            <option value="水道光熱費">💡 水道光熱費</option>
+            <option value="通信費">📱 通信費</option>
+            <option value="保険">🛡 保険</option>
+            <option value="医療費">🏥 医療費</option>
+            <option value="教育費">📚 教育費</option>
+            <option value="趣味・娯楽">🎮 趣味・娯楽</option>
+            <option value="衣服・美容">👕 衣服・美容</option>
+            <option value="交際費">🍻 交際費</option>
+            <option value="子ども">👶 子ども</option>
+            <option value="ペット">🐶 ペット</option>
+            <option value="車両費">🚗 車両費</option>
+            <option value="その他">📦 その他</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">店名</label>
+        <input type="text" id="edit-store" class="form-input" placeholder="例: イオン">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">品目</label>
+        <div id="edit-items"></div>
+        <button type="button" class="add-btn" onclick="KakeiboApp.addItemRow()">+ 品目を追加</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">合計金額</label>
+        <input type="number" id="edit-amount" class="form-input" placeholder="¥0" inputmode="numeric" style="font-size:20px;font-weight:700">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">メモ</label>
+        <input type="text" id="edit-memo" class="form-input" placeholder="メモ（任意）">
+      </div>
+
+      <div class="edit-actions">
+        <button class="btn btn-secondary" onclick="KakeiboApp.cancelEdit()">戻る</button>
+        <button class="btn btn-primary" onclick="KakeiboApp.saveEdit()">保存</button>
+      </div>
+      <button id="btn-delete-tx" class="btn hidden" style="width:100%;margin-top:10px;background:none;color:var(--danger);font-size:14px" onclick="KakeiboApp.deleteCurrentTx()">この記録を削除</button>
+    </div>
+  </div>
+
+  <script src="../../shared/form-utils.js"></script>
+  <script src="db.js"></script>
+  <script src="chart.js"></script>
+  <script src="app.js"></script>
+
+  <!-- Service Worker 登録 -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    }
+  </script>
+</body>
+</html>

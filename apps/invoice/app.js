@@ -39,11 +39,19 @@ var InvoiceApp = (function () {
   }
 
   function updateDueDate(baseDate) {
-    var due = new Date(baseDate);
-    due.setMonth(due.getMonth() + 1);
-    var dy = due.getFullYear();
-    var dm = ("0" + (due.getMonth() + 1)).slice(-2);
-    var dd = ("0" + due.getDate()).slice(-2);
+    var base = new Date(baseDate);
+    var targetMonth = base.getMonth() + 1;
+    var targetYear = base.getFullYear();
+    if (targetMonth > 11) {
+      targetMonth = 0;
+      targetYear++;
+    }
+    // 翌月の末日を求める
+    var lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+    var day = Math.min(base.getDate(), lastDayOfTargetMonth);
+    var dy = targetYear;
+    var dm = ("0" + (targetMonth + 1)).slice(-2);
+    var dd = ("0" + day).slice(-2);
     document.getElementById("inv-due-date").value = dy + "-" + dm + "-" + dd;
   }
 
@@ -209,7 +217,7 @@ var InvoiceApp = (function () {
     var clientAddr = document.getElementById("inv-client-address").value.trim();
 
     document.getElementById("prev-number").textContent = editingInvoiceId ? "(既存)" : "(保存時に自動採番)";
-    document.getElementById("prev-dates").textContent = "発行: " + issueDate + " / 期限: " + dueDate;
+    document.getElementById("prev-dates").textContent = "請求日:" + issueDate + " / 期限: " + dueDate;
     document.getElementById("prev-client").textContent = client + " 御中";
 
     var addrParts = [];
@@ -230,7 +238,7 @@ var InvoiceApp = (function () {
     for (var j = 0; j < items.length; j++) {
       var tr = document.createElement("tr");
       tr.innerHTML =
-        "<td>" + (items[j].deliveryDate || "") + "</td>" +
+        "<td>" + escapeHtml(items[j].deliveryDate || "") + "</td>" +
         "<td>" + escapeHtml(items[j].name) + "</td>" +
         "<td>" + items[j].quantity + " " + escapeHtml(items[j].unit) + "</td>" +
         "<td>¥" + items[j].unitPrice.toLocaleString() + "</td>" +
@@ -427,7 +435,7 @@ var InvoiceApp = (function () {
     var itemRows = "";
     for (var i = 0; i < items.length; i++) {
       itemRows +=
-        "<tr><td>" + (items[i].deliveryDate || "") + "</td>" +
+        "<tr><td>" + escapeHtml(items[i].deliveryDate || "") + "</td>" +
         "<td>" + escapeHtml(items[i].name) + "</td>" +
         "<td>" + items[i].quantity + " " + escapeHtml(items[i].unit || "") + "</td>" +
         "<td>¥" + Number(items[i].unitPrice).toLocaleString() + "</td>" +
@@ -450,7 +458,7 @@ var InvoiceApp = (function () {
 
     document.getElementById("detail-preview").innerHTML =
       '<div class="preview-meta">' +
-        '<span>発行: ' + inv.issueDate + '</span>' +
+        '<span>請求日:' + inv.issueDate + '</span>' +
         '<span class="status-badge ' + statusClass + '">' + statusText + '</span>' +
       '</div>' +
       '<div class="preview-client">' + escapeHtml(inv.clientName) + ' 御中</div>' +
@@ -463,7 +471,7 @@ var InvoiceApp = (function () {
       '<tbody>' + itemRows + '</tbody></table>' +
       '<div class="amount-summary">' +
         '<div class="amount-row"><span>小計</span><span>¥' + Number(inv.subtotal).toLocaleString() + '</span></div>' +
-        '<div class="amount-row"><span>消費税（' + inv.taxRate + '%）</span><span>¥' + Number(inv.taxAmount).toLocaleString() + '</span></div>' +
+        '<div class="amount-row"><span>消費税額合計（' + inv.taxRate + '%）</span><span>¥' + Number(inv.taxAmount).toLocaleString() + '</span></div>' +
         '<div class="amount-row total"><span>合計</span><span>¥' + Number(inv.total).toLocaleString() + '</span></div>' +
       '</div>' +
       (inv.notes ? '<div class="preview-section"><div class="preview-section-title">備考</div><div style="font-size:13px;">' + escapeHtml(inv.notes) + '</div></div>' : '');

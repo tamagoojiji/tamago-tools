@@ -734,9 +734,10 @@ var InvoiceApp = (function () {
           var html = "";
           var list = banks.slice(0, 8);
           for (var i = 0; i < list.length; i++) {
+            var fullName = (list[i].normalize && list[i].normalize.name) || list[i].name;
             html += '<div class="suggest-item" onclick="InvoiceApp.selectBank(\'' +
-              list[i].code + '\',\'' + escapeHtml(list[i].name) + '\')">' +
-              escapeHtml(list[i].name) +
+              list[i].code + '\',\'' + escapeHtml(fullName) + '\')">' +
+              escapeHtml(fullName) +
               '<span class="suggest-code">' + list[i].code + '</span></div>';
           }
           suggestEl.innerHTML = html;
@@ -778,9 +779,10 @@ var InvoiceApp = (function () {
           var html = "";
           var list = branches.slice(0, 8);
           for (var i = 0; i < list.length; i++) {
+            var fullName = (list[i].normalize && list[i].normalize.name) || list[i].name;
             html += '<div class="suggest-item" onclick="InvoiceApp.selectBranch(\'' +
-              list[i].code + '\',\'' + escapeHtml(list[i].name) + '\')">' +
-              escapeHtml(list[i].name) +
+              list[i].code + '\',\'' + escapeHtml(fullName) + '\')">' +
+              escapeHtml(fullName) +
               '<span class="suggest-code">' + list[i].code + '</span></div>';
           }
           suggestEl.innerHTML = html;

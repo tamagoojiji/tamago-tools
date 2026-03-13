@@ -796,6 +796,13 @@ var InvoiceApp = (function () {
     document.getElementById("branch-suggest").classList.add("hidden");
   }
 
+  // === 口座番号フォーマット（全角→半角、数字のみ） ===
+  function formatAccountNumber(el) {
+    el.value = el.value.replace(/[０-９]/g, function (s) {
+      return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+    }).replace(/[^0-9]/g, "");
+  }
+
   // === 振込先データ組み立て ===
   function getBankInfoFull() {
     var bankName = document.getElementById("prof-bank-name").value.trim();
@@ -911,6 +918,7 @@ var InvoiceApp = (function () {
     searchBank: searchBank,
     selectBank: selectBank,
     searchBranch: searchBranch,
-    selectBranch: selectBranch
+    selectBranch: selectBranch,
+    formatAccountNumber: formatAccountNumber
   };
 })();

@@ -14,6 +14,7 @@ var KakeiboApp = (function () {
   var ocrQueue = [];
   var dbReady = false;
   var pendingImageBase64 = null; // OCR時のレシート画像を一時保持
+  var businessMode = false; // 事業用モード（クラウド同期ON）
 
   var CATEGORIES = [
     "食費", "日用品", "交通費", "住居費", "水道光熱費", "通信費",
@@ -45,6 +46,15 @@ var KakeiboApp = (function () {
 
     KakeiboDB.open().then(function () {
       dbReady = true;
+      return KakeiboDB.getSetting("mode");
+    }).then(function (mode) {
+      if (!mode) {
+        // 初回起動: モード選択画面を表示
+        FormUtils.showScreen("mode-select-screen");
+        return;
+      }
+      businessMode = (mode === "business");
+      updateModeDisplay();
       loadTodayTotal();
       loadHistory();
     }).catch(function (err) {
@@ -145,6 +155,9 @@ var KakeiboApp = (function () {
         inputType: "manual",
         snapshot: JSON.parse(JSON.stringify(tx))
       });
+    }).then(function () {
+      // 事業用モード: クラウド同期
+      return syncToGas("kakeibo_save", { transaction: tx });
     }).then(function () {
       FormUtils.showToast("保存しました");
       document.getElementById("input-amount").value = "";
@@ -490,6 +503,13 @@ var KakeiboApp = (function () {
         return KakeiboDB.saveImage(txId, pendingImageBase64, "image/jpeg");
       }
     }).then(function () {
+      // 事業用モード: クラウド同期（画像付き）
+      return syncToGas("kakeibo_save", {
+        transaction: tx,
+        imageBase64: pendingImageBase64,
+        mimeType: "image/jpeg"
+      });
+    }).then(function () {
       FormUtils.showToast("保存しました");
       pendingImageBase64 = null;
       editingId = null;
@@ -656,6 +676,9 @@ var KakeiboApp = (function () {
     }).then(function () {
       // 画像も削除（監査ログには残る）
       return KakeiboDB.deleteImage(txId);
+    }).then(function () {
+      // 事業用モード: クラウド同期
+      return syncToGas("kakeibo_delete", { transactionId: txId });
     }).then(function () {
       FormUtils.showToast("削除しました");
       editingId = null;
@@ -1046,6 +1069,126 @@ var KakeiboApp = (function () {
     }
   }
 
+  // === モード選択・切替 ===
+  function selectMode(mode) {
+    businessMode = (mode === "business");
+    KakeiboDB.setSetting("mode", mode).then(function () {
+      updateModeDisplay();
+      FormUtils.showScreen("main-screen");
+      loadTodayTotal();
+      loadHistory();
+      if (businessMode) {
+        FormUtils.showToast("事業用モード: クラウド同期ON");
+      } else {
+        FormUtils.showToast("個人用モード: ローカル保存のみ");
+      }
+    }).catch(function (err) {
+      console.error("モード設定エラー:", err);
+    });
+  }
+
+  function switchMode() {
+    var newMode = businessMode ? "personal" : "business";
+    var msg = businessMode
+      ? "個人用モードに切り替えますか？\nクラウド同期が停止します。"
+      : "事業用モードに切り替えますか？\nデータがクラウドに同期されます。";
+    if (!confirm(msg)) return;
+    selectMode(newMode);
+  }
+
+  function updateModeDisplay() {
+    var display = document.getElementById("current-mode-display");
+    if (display) {
+      if (businessMode) {
+        display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#E8F5E9;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">☁️</span><div><div style="font-size:13px;font-weight:700;color:#2E7D32">事業用モード</div><div style="font-size:11px;color:#666">クラウド同期ON・電子帳簿保存法対応</div></div></div>';
+      } else {
+        display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#E3F2FD;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">🔒</span><div><div style="font-size:13px;font-weight:700;color:#1565C0">個人用モード</div><div style="font-size:11px;color:#666">ローカル保存のみ・プライバシー重視</div></div></div>';
+      }
+    }
+    // 同期ボタンの表示切替
+    var syncBtn = document.getElementById("btn-sync-from-gas");
+    if (syncBtn) {
+      syncBtn.style.display = businessMode ? "block" : "none";
+    }
+    // ヘッダーバッジ
+    var badge = document.getElementById("mode-badge");
+    if (badge) {
+      if (businessMode) {
+        badge.textContent = "☁️ 事業用";
+        badge.classList.remove("hidden");
+      } else {
+        badge.classList.add("hidden");
+      }
+    }
+  }
+
+  // === GAS同期（事業用モードのみ） ===
+  function syncToGas(action, data) {
+    if (!businessMode) return Promise.resolve();
+
+    var body = {
+      action: action,
+      userId: userId
+    };
+    if (data.transaction) body.transaction = data.transaction;
+    if (data.imageBase64) body.imageBase64 = data.imageBase64;
+    if (data.mimeType) body.mimeType = data.mimeType;
+    if (data.transactionId) body.transactionId = data.transactionId;
+
+    return fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.text(); })
+    .then(function (text) {
+      try {
+        var res = JSON.parse(text);
+        if (!res.ok) {
+          console.error("GAS同期エラー:", res.error);
+        }
+      } catch (e) {
+        console.error("GAS同期レスポンスパースエラー:", e);
+      }
+    }).catch(function (err) {
+      console.error("GAS同期通信エラー:", err);
+      // 同期失敗してもローカル保存は成功しているのでエラーにしない
+    });
+  }
+
+  function syncFromGas() {
+    if (!businessMode) {
+      FormUtils.showToast("事業用モードでのみ利用できます");
+      return;
+    }
+    showSpinner("クラウドから同期中...");
+
+    fetch(GAS_URL + "?action=kakeibo_list&userId=" + encodeURIComponent(userId))
+    .then(function (r) { return r.text(); })
+    .then(function (text) {
+      var res = JSON.parse(text);
+      if (!res.ok) {
+        hideSpinner();
+        FormUtils.showToast("同期に失敗しました: " + (res.error || ""));
+        return;
+      }
+      var txs = res.transactions || [];
+      var promises = [];
+      for (var i = 0; i < txs.length; i++) {
+        promises.push(KakeiboDB.addTransaction(txs[i]));
+      }
+      return Promise.all(promises);
+    }).then(function () {
+      hideSpinner();
+      FormUtils.showToast("同期完了");
+      loadHistory();
+      loadTodayTotal();
+    }).catch(function (err) {
+      hideSpinner();
+      console.error("同期エラー:", err);
+      FormUtils.showToast("同期に失敗しました");
+    });
+  }
+
   function escapeHtml(str) {
     var div = document.createElement("div");
     div.textContent = str;
@@ -1069,7 +1212,10 @@ var KakeiboApp = (function () {
     clearAllData: clearAllData,
     showImageViewer: showImageViewer,
     closeImageViewer: closeImageViewer,
-    executeSearch: executeSearch
+    executeSearch: executeSearch,
+    selectMode: selectMode,
+    switchMode: switchMode,
+    syncFromGas: syncFromGas
   };
 })();
 

@@ -16,8 +16,6 @@ var InvoiceApp = (function () {
   // === 初期化 ===
   function init() {
     userId = FormUtils.getUserId();
-    setDefaultDates();
-    addItemRow();
     loadInvoices();
     loadProfile();
   }
@@ -37,15 +35,9 @@ var InvoiceApp = (function () {
     document.getElementById("inv-due-date").value = ny + "-" + nm + "-" + nd;
   }
 
-  // === タブ切替 ===
-  function switchTab(tabId, btn) {
-    var tabs = document.querySelectorAll(".tab-content");
-    for (var i = 0; i < tabs.length; i++) tabs[i].classList.add("hidden");
-    document.getElementById("tab-" + tabId).classList.remove("hidden");
-
-    var btns = document.querySelectorAll(".tab-btn");
-    for (var j = 0; j < btns.length; j++) btns[j].classList.remove("active");
-    if (btn) btn.classList.add("active");
+  // === 事業者情報画面 ===
+  function showProfile() {
+    FormUtils.showScreen("profile-screen");
   }
 
   // === 品目行 ===
@@ -626,7 +618,7 @@ var InvoiceApp = (function () {
 
   // === Public API ===
   return {
-    switchTab: switchTab,
+    showProfile: showProfile,
     showCreate: showCreate,
     backToMain: backToMain,
     backToCreate: backToCreate,

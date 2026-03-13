@@ -286,44 +286,9 @@
         <button class="btn btn-primary" onclick="InvoiceApp.showCreate()" style="padding:8px 16px;font-size:13px;">+ 新規作成</button>
       </div>
 
-      <div class="tab-nav">
-        <button class="tab-btn active" onclick="InvoiceApp.switchTab('list', this)">請求書一覧</button>
-        <button class="tab-btn" onclick="InvoiceApp.switchTab('profile', this)">事業者情報</button>
-      </div>
+      <div id="invoice-list"></div>
 
-      <!-- 一覧タブ -->
-      <div id="tab-list" class="tab-content">
-        <div id="invoice-list"></div>
-      </div>
-
-      <!-- 事業者情報タブ -->
-      <div id="tab-profile" class="tab-content hidden">
-        <div class="form-group">
-          <label class="form-label">屋号・事業者名</label>
-          <input type="text" id="prof-name" class="form-input" placeholder="例：たまご事務所">
-        </div>
-        <div class="form-group">
-          <label class="form-label">住所</label>
-          <input type="text" id="prof-address" class="form-input" placeholder="例：大阪府大阪市...">
-        </div>
-        <div class="form-group">
-          <label class="form-label">電話番号</label>
-          <input type="tel" id="prof-phone" class="form-input" placeholder="例：090-1234-5678">
-        </div>
-        <div class="form-group">
-          <label class="form-label">メールアドレス</label>
-          <input type="email" id="prof-email" class="form-input" placeholder="例：info@example.com">
-        </div>
-        <div class="form-group">
-          <label class="form-label">振込先</label>
-          <textarea id="prof-bank" class="form-input" rows="2" placeholder="例：〇〇銀行 △△支店 普通 1234567"></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">インボイス登録番号</label>
-          <input type="text" id="prof-reg" class="form-input" placeholder="例：T1234567890123">
-        </div>
-        <button class="btn btn-primary" onclick="InvoiceApp.saveProfile()" style="width:100%;">保存する</button>
-      </div>
+      <button class="btn btn-outline" onclick="InvoiceApp.showProfile()" style="width:100%;margin-top:16px;">事業者情報を編集</button>
     </div>
   </div>
 
@@ -450,6 +415,42 @@
       </div>
       <button class="btn btn-outline" onclick="InvoiceApp.editInvoice()" style="width:100%;margin-bottom:8px;">編集する</button>
       <button class="btn" onclick="InvoiceApp.deleteInvoice()" style="width:100%;color:var(--danger);border:1px solid var(--danger);">削除する</button>
+    </div>
+  </div>
+
+  <!-- 画面5: 事業者情報 -->
+  <div id="profile-screen" data-screen class="screen hidden">
+    <div class="container">
+      <div class="invoice-header">
+        <button class="back-btn" onclick="InvoiceApp.backToMain()">←</button>
+        <h2>事業者情報</h2>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">屋号・事業者名</label>
+        <input type="text" id="prof-name" class="form-input" placeholder="例：たまご事務所">
+      </div>
+      <div class="form-group">
+        <label class="form-label">住所</label>
+        <input type="text" id="prof-address" class="form-input" placeholder="例：大阪府大阪市...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">電話番号</label>
+        <input type="tel" id="prof-phone" class="form-input" placeholder="例：090-1234-5678">
+      </div>
+      <div class="form-group">
+        <label class="form-label">メールアドレス</label>
+        <input type="email" id="prof-email" class="form-input" placeholder="例：info@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">振込先</label>
+        <textarea id="prof-bank" class="form-input" rows="2" placeholder="例：〇〇銀行 △△支店 普通 1234567"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">インボイス登録番号</label>
+        <input type="text" id="prof-reg" class="form-input" placeholder="例：T1234567890123">
+      </div>
+      <button class="btn btn-primary" onclick="InvoiceApp.saveProfile()" style="width:100%;">保存する</button>
     </div>
   </div>
 

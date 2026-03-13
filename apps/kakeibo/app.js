@@ -412,8 +412,20 @@ var KakeiboApp = (function () {
     };
 
     console.log("saveEdit: 保存開始", JSON.stringify(tx));
-    KakeiboDB.addTransaction(tx).then(function () {
-      // 保存確認: 全件数を表示
+
+    // 重複チェック（編集時はスキップ）
+    KakeiboDB.getAllTransactions().then(function (all) {
+      if (!editingId) {
+        for (var d = 0; d < all.length; d++) {
+          var existing = all[d];
+          if (existing.date === tx.date && existing.total === tx.total && existing.store === tx.store) {
+            FormUtils.showToast("この内容は既に登録済みです");
+            return Promise.reject("duplicate");
+          }
+        }
+      }
+      return KakeiboDB.addTransaction(tx);
+    }).then(function () {
       return KakeiboDB.getAllTransactions();
     }).then(function (all) {
       console.log("saveEdit: 保存完了。全" + all.length + "件");
@@ -427,8 +439,9 @@ var KakeiboApp = (function () {
         switchTab("history");
       }
     }).catch(function (err) {
+      if (err === "duplicate") return;
       console.error("保存エラー:", err);
-      FormUtils.showToast("保存に失敗しました: " + err.message);
+      FormUtils.showToast("保存に失敗しました: " + (err.message || err));
     });
   }
 

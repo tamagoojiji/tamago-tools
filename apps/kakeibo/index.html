@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>かんたん家計簿 - たまごツール</title>
-  <link rel="stylesheet" href="../../style.css?v=5">
+  <link rel="stylesheet" href="../../style.css?v=6">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#F5A623">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -430,10 +430,10 @@
     </div>
   </div>
 
-  <script src="../../shared/form-utils.js?v=5"></script>
-  <script src="db.js?v=5"></script>
-  <script src="chart.js?v=5"></script>
-  <script src="app.js?v=5"></script>
+  <script src="../../shared/form-utils.js?v=6"></script>
+  <script src="db.js?v=6"></script>
+  <script src="chart.js?v=6"></script>
+  <script src="app.js?v=6"></script>
 
   <!-- Service Worker 登録 -->
   <script>
@@ -441,12 +441,12 @@
       // 古いSWのキャッシュをクリア
       caches.keys().then(function(names) {
         names.forEach(function(name) {
-          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v5") {
+          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v6") {
             caches.delete(name);
           }
         });
       });
-      navigator.serviceWorker.register("sw.js?v=5").catch(function () {});
+      navigator.serviceWorker.register("sw.js?v=6").catch(function () {});
     }
   </script>
 </body>

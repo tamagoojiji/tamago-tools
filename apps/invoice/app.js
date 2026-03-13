@@ -91,20 +91,21 @@ var InvoiceApp = (function () {
         '</div>' +
         '<div>' +
           '<label>単位</label>' +
-          '<select id="item-unit-' + idx + '">' +
-            '<option value="式"' + ((item && item.unit) === '式' || !(item && item.unit) ? ' selected' : '') + '>式</option>' +
-            '<option value="個"' + ((item && item.unit) === '個' ? ' selected' : '') + '>個</option>' +
-            '<option value="本"' + ((item && item.unit) === '本' ? ' selected' : '') + '>本</option>' +
-            '<option value="枚"' + ((item && item.unit) === '枚' ? ' selected' : '') + '>枚</option>' +
-            '<option value="台"' + ((item && item.unit) === '台' ? ' selected' : '') + '>台</option>' +
-            '<option value="件"' + ((item && item.unit) === '件' ? ' selected' : '') + '>件</option>' +
-            '<option value="時間"' + ((item && item.unit) === '時間' ? ' selected' : '') + '>時間</option>' +
-            '<option value="日"' + ((item && item.unit) === '日' ? ' selected' : '') + '>日</option>' +
-            '<option value="月"' + ((item && item.unit) === '月' ? ' selected' : '') + '>月</option>' +
-            '<option value="回"' + ((item && item.unit) === '回' ? ' selected' : '') + '>回</option>' +
-            '<option value="セット"' + ((item && item.unit) === 'セット' ? ' selected' : '') + '>セット</option>' +
-            '<option value="kg"' + ((item && item.unit) === 'kg' ? ' selected' : '') + '>kg</option>' +
-          '</select>' +
+          (function() {
+            var unitVal = (item && item.unit) || '式';
+            var units = ['式','個','本','枚','台','件','時間','日','月','回','セット','kg'];
+            var opts = '';
+            var found = false;
+            for (var u = 0; u < units.length; u++) {
+              var sel = (unitVal === units[u]) ? ' selected' : '';
+              if (sel) found = true;
+              opts += '<option value="' + units[u] + '"' + sel + '>' + units[u] + '</option>';
+            }
+            if (!found) {
+              opts = '<option value="' + unitVal + '" selected>' + unitVal + '</option>' + opts;
+            }
+            return '<select id="item-unit-' + idx + '">' + opts + '</select>';
+          })() +
         '</div>' +
       '</div>';
 
@@ -562,14 +563,20 @@ var InvoiceApp = (function () {
     document.getElementById("inv-client-zip").value = currentInvoice.clientZip || "";
     document.getElementById("inv-client-address").value = currentInvoice.clientAddress || "";
     document.getElementById("inv-client-building").value = currentInvoice.clientBuilding || "";
-    // 敬称を分離して復元
+    // 敬称を分離して復元（スペース有無両対応）
     var personFull = currentInvoice.clientPerson || "";
     var honorifics = ["様", "御中", "殿", "先生"];
     var foundHonorific = "";
     for (var h = 0; h < honorifics.length; h++) {
-      if (personFull.endsWith(" " + honorifics[h])) {
+      var withSpace = new RegExp("\\s" + honorifics[h] + "$");
+      var withoutSpace = new RegExp(honorifics[h] + "$");
+      if (withSpace.test(personFull)) {
         foundHonorific = honorifics[h];
-        personFull = personFull.slice(0, -(honorifics[h].length + 1));
+        personFull = personFull.replace(withSpace, "");
+        break;
+      } else if (withoutSpace.test(personFull)) {
+        foundHonorific = honorifics[h];
+        personFull = personFull.replace(withoutSpace, "");
         break;
       }
     }

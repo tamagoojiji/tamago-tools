@@ -38,14 +38,14 @@ var InvoiceApp = (function () {
   }
 
   // === タブ切替 ===
-  function switchTab(tabId) {
+  function switchTab(tabId, btn) {
     var tabs = document.querySelectorAll(".tab-content");
     for (var i = 0; i < tabs.length; i++) tabs[i].classList.add("hidden");
     document.getElementById("tab-" + tabId).classList.remove("hidden");
 
     var btns = document.querySelectorAll(".tab-btn");
     for (var j = 0; j < btns.length; j++) btns[j].classList.remove("active");
-    event.target.classList.add("active");
+    if (btn) btn.classList.add("active");
   }
 
   // === 品目行 ===

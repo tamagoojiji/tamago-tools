@@ -541,10 +541,18 @@ var InvoiceApp = (function () {
         if (res.ok && res.profile) {
           cachedProfile = res.profile;
           document.getElementById("prof-name").value = res.profile.businessName || "";
-          document.getElementById("prof-address").value = res.profile.businessAddress || "";
+          // 住所: "〒XXX-XXXX 住所" 形式から分離
+          var addr = res.profile.businessAddress || "";
+          var zipMatch = addr.match(/^〒?(\d{3}-?\d{4})\s*/);
+          if (zipMatch) {
+            document.getElementById("prof-zip").value = zipMatch[1];
+            document.getElementById("prof-address").value = addr.replace(/^〒?\d{3}-?\d{4}\s*/, "");
+          } else {
+            document.getElementById("prof-address").value = addr;
+          }
           document.getElementById("prof-phone").value = res.profile.phone || "";
-          document.getElementById("prof-email").value = res.profile.email || "";
-          document.getElementById("prof-bank").value = res.profile.bankInfo || "";
+          setEmailFromFull(res.profile.email || "");
+          setBankInfoFromFull(res.profile.bankInfo || "");
           document.getElementById("prof-reg").value = res.profile.registrationNumber || "";
         }
       })
@@ -556,12 +564,16 @@ var InvoiceApp = (function () {
       FormUtils.showToast("GAS URLが未設定です");
       return;
     }
+    var zip = document.getElementById("prof-zip").value.trim();
+    var address = document.getElementById("prof-address").value.trim();
+    var fullAddress = zip ? "〒" + zip + " " + address : address;
+
     var profile = {
       businessName: document.getElementById("prof-name").value.trim(),
-      businessAddress: document.getElementById("prof-address").value.trim(),
+      businessAddress: fullAddress,
       phone: document.getElementById("prof-phone").value.trim(),
-      email: document.getElementById("prof-email").value.trim(),
-      bankInfo: document.getElementById("prof-bank").value.trim(),
+      email: getEmailFull(),
+      bankInfo: getBankInfoFull(),
       registrationNumber: document.getElementById("prof-reg").value.trim()
     };
 
@@ -572,6 +584,7 @@ var InvoiceApp = (function () {
         if (res.ok) {
           cachedProfile = profile;
           FormUtils.showToast("保存しました");
+          backToMain();
         } else {
           FormUtils.showToast("エラー: " + (res.error || ""));
         }
@@ -580,6 +593,262 @@ var InvoiceApp = (function () {
         hideSpinner();
         FormUtils.showToast("通信エラー");
       });
+  }
+
+  // === 郵便番号検索 ===
+  function onZipInput(el) {
+    // 数字とハイフンのみ許可、全角→半角変換
+    el.value = el.value.replace(/[０-９]/g, function (s) {
+      return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+    }).replace(/[^0-9\-]/g, "");
+    // 7桁入力で自動検索
+    var digits = el.value.replace(/-/g, "");
+    if (digits.length === 7) searchZip();
+  }
+
+  function searchZip() {
+    var zip = document.getElementById("prof-zip").value.replace(/[^0-9]/g, "");
+    if (zip.length !== 7) {
+      FormUtils.showToast("7桁の郵便番号を入力してください");
+      return;
+    }
+    fetch("https://zipcloud.ibsnet.co.jp/api/search?zipcode=" + zip)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.results && data.results.length > 0) {
+          var r = data.results[0];
+          var address = r.address1 + r.address2 + r.address3;
+          document.getElementById("prof-address").value = address;
+          document.getElementById("prof-address").focus();
+          FormUtils.showToast("住所を取得しました");
+        } else {
+          FormUtils.showToast("該当する住所が見つかりません");
+        }
+      })
+      .catch(function () {
+        FormUtils.showToast("住所検索に失敗しました");
+      });
+  }
+
+  // === 電話番号フォーマット（自動ハイフン挿入） ===
+  function formatPhone(el) {
+    // 全角→半角変換
+    var val = el.value.replace(/[０-９]/g, function (s) {
+      return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+    }).replace(/[^0-9]/g, "");
+
+    // 自動ハイフン挿入
+    if (val.length <= 3) {
+      el.value = val;
+    } else if (val.startsWith("090") || val.startsWith("080") || val.startsWith("070") || val.startsWith("050")) {
+      // 携帯・IP: 090-1234-5678
+      if (val.length <= 7) {
+        el.value = val.slice(0, 3) + "-" + val.slice(3);
+      } else {
+        el.value = val.slice(0, 3) + "-" + val.slice(3, 7) + "-" + val.slice(7, 11);
+      }
+    } else if (val.startsWith("0120") || val.startsWith("0800")) {
+      // フリーダイヤル: 0120-123-456
+      var prefix = val.startsWith("0120") ? 4 : 4;
+      if (val.length <= 7) {
+        el.value = val.slice(0, prefix) + "-" + val.slice(prefix);
+      } else {
+        el.value = val.slice(0, prefix) + "-" + val.slice(prefix, 7) + "-" + val.slice(7, 10);
+      }
+    } else {
+      // 固定電話: 0X-XXXX-XXXX or 0XX-XXX-XXXX
+      if (val.length <= 4) {
+        el.value = val.slice(0, 2) + "-" + val.slice(2);
+      } else if (val.length <= 8) {
+        el.value = val.slice(0, 2) + "-" + val.slice(2, 6) + "-" + val.slice(6);
+      } else {
+        el.value = val.slice(0, 2) + "-" + val.slice(2, 6) + "-" + val.slice(6, 10);
+      }
+    }
+  }
+
+  // === メールドメイン選択 ===
+  function onDomainChange(sel) {
+    var custom = document.getElementById("prof-email-custom");
+    if (sel.value === "__custom__") {
+      custom.classList.remove("hidden");
+      custom.focus();
+    } else {
+      custom.classList.add("hidden");
+      custom.value = "";
+    }
+  }
+
+  function getEmailFull() {
+    var local = document.getElementById("prof-email-local").value.trim();
+    if (!local) return "";
+    var domainSel = document.getElementById("prof-email-domain").value;
+    var domain = domainSel === "__custom__"
+      ? document.getElementById("prof-email-custom").value.trim()
+      : domainSel;
+    if (!domain) return local;
+    return local + "@" + domain;
+  }
+
+  function setEmailFromFull(email) {
+    if (!email) return;
+    var parts = email.split("@");
+    document.getElementById("prof-email-local").value = parts[0] || "";
+    if (parts[1]) {
+      var domainSel = document.getElementById("prof-email-domain");
+      var found = false;
+      for (var i = 0; i < domainSel.options.length; i++) {
+        if (domainSel.options[i].value === parts[1]) {
+          domainSel.value = parts[1];
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        domainSel.value = "__custom__";
+        document.getElementById("prof-email-custom").classList.remove("hidden");
+        document.getElementById("prof-email-custom").value = parts[1];
+      }
+    }
+  }
+
+  // === 銀行名検索（銀行くんAPI） ===
+  var bankSearchTimer = null;
+  var selectedBankCode = "";
+
+  function searchBank(query) {
+    clearTimeout(bankSearchTimer);
+    var suggestEl = document.getElementById("bank-suggest");
+    if (!query || query.length < 1) {
+      suggestEl.classList.add("hidden");
+      return;
+    }
+    bankSearchTimer = setTimeout(function () {
+      fetch("https://bank.teraren.com/banks/search.json?name=" + encodeURIComponent(query))
+        .then(function (r) { return r.json(); })
+        .then(function (banks) {
+          if (!banks || banks.length === 0) {
+            suggestEl.classList.add("hidden");
+            return;
+          }
+          var html = "";
+          var list = banks.slice(0, 8);
+          for (var i = 0; i < list.length; i++) {
+            html += '<div class="suggest-item" onclick="InvoiceApp.selectBank(\'' +
+              list[i].code + '\',\'' + escapeHtml(list[i].name) + '\')">' +
+              escapeHtml(list[i].name) +
+              '<span class="suggest-code">' + list[i].code + '</span></div>';
+          }
+          suggestEl.innerHTML = html;
+          suggestEl.classList.remove("hidden");
+        })
+        .catch(function () { suggestEl.classList.add("hidden"); });
+    }, 300);
+  }
+
+  function selectBank(code, name) {
+    selectedBankCode = code;
+    document.getElementById("prof-bank-name").value = name;
+    document.getElementById("prof-bank-code").value = code;
+    document.getElementById("bank-suggest").classList.add("hidden");
+    // 支店名にフォーカス
+    document.getElementById("prof-branch-name").value = "";
+    document.getElementById("prof-branch-code").value = "";
+    document.getElementById("prof-branch-name").focus();
+  }
+
+  // === 支店名検索 ===
+  var branchSearchTimer = null;
+
+  function searchBranch(query) {
+    clearTimeout(branchSearchTimer);
+    var suggestEl = document.getElementById("branch-suggest");
+    if (!query || query.length < 1 || !selectedBankCode) {
+      suggestEl.classList.add("hidden");
+      return;
+    }
+    branchSearchTimer = setTimeout(function () {
+      fetch("https://bank.teraren.com/banks/" + selectedBankCode + "/branches/search.json?name=" + encodeURIComponent(query))
+        .then(function (r) { return r.json(); })
+        .then(function (branches) {
+          if (!branches || branches.length === 0) {
+            suggestEl.classList.add("hidden");
+            return;
+          }
+          var html = "";
+          var list = branches.slice(0, 8);
+          for (var i = 0; i < list.length; i++) {
+            html += '<div class="suggest-item" onclick="InvoiceApp.selectBranch(\'' +
+              list[i].code + '\',\'' + escapeHtml(list[i].name) + '\')">' +
+              escapeHtml(list[i].name) +
+              '<span class="suggest-code">' + list[i].code + '</span></div>';
+          }
+          suggestEl.innerHTML = html;
+          suggestEl.classList.remove("hidden");
+        })
+        .catch(function () { suggestEl.classList.add("hidden"); });
+    }, 300);
+  }
+
+  function selectBranch(code, name) {
+    document.getElementById("prof-branch-name").value = name;
+    document.getElementById("prof-branch-code").value = code;
+    document.getElementById("branch-suggest").classList.add("hidden");
+  }
+
+  // === 振込先データ組み立て ===
+  function getBankInfoFull() {
+    var bankName = document.getElementById("prof-bank-name").value.trim();
+    var bankCode = document.getElementById("prof-bank-code").value.trim();
+    var branchName = document.getElementById("prof-branch-name").value.trim();
+    var branchCode = document.getElementById("prof-branch-code").value.trim();
+    var accountType = document.getElementById("prof-account-type").value;
+    var accountNumber = document.getElementById("prof-account-number").value.trim();
+    var accountHolder = document.getElementById("prof-account-holder").value.trim();
+
+    if (!bankName) return "";
+    var parts = [bankName];
+    if (bankCode) parts[0] += "（" + bankCode + "）";
+    parts.push(branchName + (branchCode ? "（" + branchCode + "）" : ""));
+    parts.push(accountType + " " + accountNumber);
+    if (accountHolder) parts.push(accountHolder);
+    return parts.join(" / ");
+  }
+
+  function setBankInfoFromFull(bankInfo) {
+    // 既存の統合文字列からパースを試みる（完全な復元は難しいため簡易対応）
+    if (!bankInfo) return;
+    // 新形式: "銀行名（コード） / 支店名（コード） / 普通 1234567 / 名義"
+    var parts = bankInfo.split(" / ");
+    if (parts.length >= 3) {
+      var bankMatch = parts[0].match(/^(.+?)(?:（(\d+)）)?$/);
+      if (bankMatch) {
+        document.getElementById("prof-bank-name").value = bankMatch[1];
+        document.getElementById("prof-bank-code").value = bankMatch[2] || "";
+        selectedBankCode = bankMatch[2] || "";
+      }
+      var branchMatch = parts[1].match(/^(.+?)(?:（(\d+)）)?$/);
+      if (branchMatch) {
+        document.getElementById("prof-branch-name").value = branchMatch[1];
+        document.getElementById("prof-branch-code").value = branchMatch[2] || "";
+      }
+      var acctParts = parts[2].split(" ");
+      if (acctParts.length >= 1) {
+        var typeEl = document.getElementById("prof-account-type");
+        for (var i = 0; i < typeEl.options.length; i++) {
+          if (typeEl.options[i].value === acctParts[0]) {
+            typeEl.value = acctParts[0];
+            break;
+          }
+        }
+      }
+      if (acctParts.length >= 2) {
+        document.getElementById("prof-account-number").value = acctParts[1];
+      }
+      if (parts[3]) {
+        document.getElementById("prof-account-holder").value = parts[3];
+      }
+    }
   }
 
   // === ユーティリティ ===
@@ -634,6 +903,14 @@ var InvoiceApp = (function () {
     generatePdf: generatePdf,
     editInvoice: editInvoice,
     deleteInvoice: deleteInvoice,
-    saveProfile: saveProfile
+    saveProfile: saveProfile,
+    onZipInput: onZipInput,
+    searchZip: searchZip,
+    formatPhone: formatPhone,
+    onDomainChange: onDomainChange,
+    searchBank: searchBank,
+    selectBank: selectBank,
+    searchBranch: searchBranch,
+    selectBranch: selectBranch
   };
 })();

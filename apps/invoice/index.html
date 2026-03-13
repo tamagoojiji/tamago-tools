@@ -259,6 +259,29 @@
       font-weight: bold;
     }
 
+    /* サジェストリスト */
+    .suggest-list {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      max-height: 150px;
+      overflow-y: auto;
+      margin-top: 4px;
+    }
+    .suggest-item {
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .suggest-item:last-child { border-bottom: none; }
+    .suggest-item:active { background: #FFF8F0; }
+    .suggest-item .suggest-code {
+      font-size: 11px;
+      color: var(--text-light);
+      margin-left: 8px;
+    }
+
     /* アクションボタン群 */
     .action-btns {
       display: flex;
@@ -430,22 +453,86 @@
         <label class="form-label">屋号・事業者名</label>
         <input type="text" id="prof-name" class="form-input" placeholder="例：たまご事務所">
       </div>
+
+      <!-- 郵便番号 + 住所 -->
       <div class="form-group">
-        <label class="form-label">住所</label>
-        <input type="text" id="prof-address" class="form-input" placeholder="例：大阪府大阪市...">
+        <label class="form-label">郵便番号</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="prof-zip" class="form-input" placeholder="1234567" maxlength="8" inputmode="numeric" style="width:140px;" oninput="InvoiceApp.onZipInput(this)">
+          <button class="btn btn-outline" onclick="InvoiceApp.searchZip()" style="padding:8px 12px;font-size:13px;white-space:nowrap;">住所検索</button>
+        </div>
       </div>
+      <div class="form-group">
+        <label class="form-label">住所（自動入力後、番地等を追記）</label>
+        <input type="text" id="prof-address" class="form-input" placeholder="例：大阪府大阪市中央区...">
+      </div>
+
+      <!-- 電話番号 -->
       <div class="form-group">
         <label class="form-label">電話番号</label>
-        <input type="tel" id="prof-phone" class="form-input" placeholder="例：090-1234-5678">
+        <input type="tel" id="prof-phone" class="form-input" placeholder="090-1234-5678" inputmode="tel" oninput="InvoiceApp.formatPhone(this)">
       </div>
+
+      <!-- メールアドレス -->
       <div class="form-group">
         <label class="form-label">メールアドレス</label>
-        <input type="email" id="prof-email" class="form-input" placeholder="例：info@example.com">
+        <div style="display:flex;gap:4px;align-items:center;">
+          <input type="text" id="prof-email-local" class="form-input" placeholder="info" style="flex:1;" inputmode="email">
+          <span style="font-size:16px;font-weight:bold;">@</span>
+          <select id="prof-email-domain" class="form-input" style="flex:1;" onchange="InvoiceApp.onDomainChange(this)">
+            <option value="">選択</option>
+            <option value="gmail.com">gmail.com</option>
+            <option value="yahoo.co.jp">yahoo.co.jp</option>
+            <option value="icloud.com">icloud.com</option>
+            <option value="outlook.com">outlook.com</option>
+            <option value="outlook.jp">outlook.jp</option>
+            <option value="hotmail.com">hotmail.com</option>
+            <option value="docomo.ne.jp">docomo.ne.jp</option>
+            <option value="softbank.ne.jp">softbank.ne.jp</option>
+            <option value="ezweb.ne.jp">ezweb.ne.jp</option>
+            <option value="__custom__">その他（手入力）</option>
+          </select>
+        </div>
+        <input type="text" id="prof-email-custom" class="form-input hidden" placeholder="ドメインを入力" style="margin-top:6px;">
+      </div>
+
+      <!-- 振込先（分割入力） -->
+      <label class="form-label" style="margin-bottom:8px;">振込先</label>
+      <div class="form-group">
+        <label class="form-label" style="font-size:12px;">銀行名</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="prof-bank-name" class="form-input" placeholder="例：三菱UFJ銀行" style="flex:1;" oninput="InvoiceApp.searchBank(this.value)">
+          <input type="text" id="prof-bank-code" class="form-input" placeholder="コード" style="width:80px;" readonly>
+        </div>
+        <div id="bank-suggest" class="suggest-list hidden"></div>
       </div>
       <div class="form-group">
-        <label class="form-label">振込先</label>
-        <textarea id="prof-bank" class="form-input" rows="2" placeholder="例：〇〇銀行 △△支店 普通 1234567"></textarea>
+        <label class="form-label" style="font-size:12px;">支店名</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="prof-branch-name" class="form-input" placeholder="例：渋谷支店" style="flex:1;" oninput="InvoiceApp.searchBranch(this.value)">
+          <input type="text" id="prof-branch-code" class="form-input" placeholder="コード" style="width:80px;" readonly>
+        </div>
+        <div id="branch-suggest" class="suggest-list hidden"></div>
       </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1;">
+          <label class="form-label" style="font-size:12px;">口座種別</label>
+          <select id="prof-account-type" class="form-input">
+            <option value="普通">普通</option>
+            <option value="当座">当座</option>
+            <option value="貯蓄">貯蓄</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:1.5;">
+          <label class="form-label" style="font-size:12px;">口座番号</label>
+          <input type="text" id="prof-account-number" class="form-input" placeholder="1234567" inputmode="numeric" maxlength="8">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="font-size:12px;">口座名義</label>
+        <input type="text" id="prof-account-holder" class="form-input" placeholder="例：タマゴ タロウ">
+      </div>
+
       <div class="form-group">
         <label class="form-label">インボイス登録番号</label>
         <input type="text" id="prof-reg" class="form-input" placeholder="例：T1234567890123">

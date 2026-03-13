@@ -1,4 +1,4 @@
-var CACHE_NAME = "kakeibo-v6";
+var CACHE_NAME = "kakeibo-v7";
 var ASSETS = [
   "./",
   "./index.html",
@@ -48,7 +48,7 @@ self.addEventListener("fetch", function (e) {
       }
       return response;
     }).catch(function () {
-      return caches.match(e.request);
+      return caches.match(e.request, { ignoreSearch: true });
     })
   );
 });

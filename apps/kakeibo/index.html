@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>かんたん家計簿 - たまごツール</title>
-  <link rel="stylesheet" href="../../style.css?v=6">
+  <link rel="stylesheet" href="../../style.css?v=7">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#F5A623">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -212,6 +212,83 @@
     .edit-actions .btn {
       flex: 1;
     }
+
+    /* 検索セクション */
+    .search-section {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+    .search-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--secondary);
+    }
+    .search-toggle-icon {
+      font-size: 18px;
+      transition: transform 0.2s;
+    }
+    .search-body {
+      display: none;
+      margin-top: 12px;
+    }
+    .search-body.open {
+      display: block;
+    }
+    .search-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .search-row .form-input {
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    /* 画像ビューア */
+    .image-viewer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 300;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+    }
+    .image-viewer.hidden {
+      display: none;
+    }
+    .image-viewer img {
+      max-width: 95%;
+      max-height: 80vh;
+      object-fit: contain;
+    }
+    .image-viewer-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: #fff;
+      font-size: 28px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
   </style>
 </head>
 <body>
@@ -224,6 +301,12 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner-overlay.hidden { display: none !important; }
   </style>
+
+  <!-- 画像ビューア -->
+  <div id="image-viewer" class="image-viewer hidden" onclick="KakeiboApp.closeImageViewer()">
+    <button class="image-viewer-close" onclick="KakeiboApp.closeImageViewer()">&times;</button>
+    <img id="viewer-image" src="" alt="レシート画像">
+  </div>
 
   <!-- メイン画面 -->
   <div id="main-screen" data-screen>
@@ -280,6 +363,45 @@
 
       <!-- === 履歴タブ === -->
       <div id="tab-history" class="tab-content">
+        <!-- 検索（電子帳簿保存法対応） -->
+        <div class="search-section">
+          <div class="search-toggle" onclick="var b=this.nextElementSibling;b.classList.toggle('open');this.querySelector('.search-toggle-icon').style.transform=b.classList.contains('open')?'rotate(180deg)':''">
+            <span>🔍 取引検索</span>
+            <span class="search-toggle-icon">▼</span>
+          </div>
+          <div class="search-body">
+            <div class="form-group" style="margin-bottom:8px">
+              <label class="form-label">取引先・メモ</label>
+              <input type="text" id="search-store" class="form-input" placeholder="例: イオン" style="padding:8px 10px;font-size:13px">
+            </div>
+            <div class="search-row">
+              <div class="form-group" style="flex:1;margin-bottom:0">
+                <label class="form-label">日付（から）</label>
+                <input type="date" id="search-date-from" class="form-input" style="padding:8px 10px;font-size:13px">
+              </div>
+              <div class="form-group" style="flex:1;margin-bottom:0">
+                <label class="form-label">日付（まで）</label>
+                <input type="date" id="search-date-to" class="form-input" style="padding:8px 10px;font-size:13px">
+              </div>
+            </div>
+            <div class="search-row" style="margin-top:8px">
+              <div class="form-group" style="flex:1;margin-bottom:0">
+                <label class="form-label">金額（以上）</label>
+                <input type="number" id="search-amount-min" class="form-input" placeholder="0" inputmode="numeric" style="padding:8px 10px;font-size:13px">
+              </div>
+              <div class="form-group" style="flex:1;margin-bottom:0">
+                <label class="form-label">金額（以下）</label>
+                <input type="number" id="search-amount-max" class="form-input" placeholder="0" inputmode="numeric" style="padding:8px 10px;font-size:13px">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button id="btn-search" class="btn btn-primary" style="flex:1;padding:10px;font-size:13px">検索</button>
+              <button id="btn-search-clear" class="btn btn-secondary" style="flex:1;padding:10px;font-size:13px">クリア</button>
+            </div>
+          </div>
+        </div>
+        <div id="search-results" class="hidden" style="margin-bottom:16px"></div>
+
         <div class="month-nav">
           <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('history',-1)">&lt;</button>
           <span class="month-nav-label" id="history-month-label"></span>
@@ -316,7 +438,8 @@
         <!-- データ管理 -->
         <div class="settings-section">
           <div class="settings-section-title">📂 データ管理</div>
-          <button class="settings-btn" onclick="KakeiboApp.exportData()">JSONバックアップ</button>
+          <button class="settings-btn" onclick="KakeiboApp.exportData(false)">JSONバックアップ</button>
+          <button class="settings-btn" onclick="KakeiboApp.exportData(true)">JSONバックアップ（画像付き）</button>
           <button class="settings-btn" onclick="KakeiboApp.exportCSV()">CSVエクスポート</button>
           <button class="settings-btn" onclick="KakeiboApp.importData()">バックアップから復元</button>
           <button class="settings-btn danger" onclick="KakeiboApp.clearAllData()">全データ削除</button>
@@ -330,8 +453,10 @@
             家計データはブラウザ内（IndexedDB）に保存され、外部サーバーには送信されません。<br><br>
             <strong>レシート撮影時のみ通信</strong><br>
             レシート画像はAI読み取りのために一時的に送信されますが、処理後すぐに破棄されます。<br><br>
+            <strong>電子帳簿保存法対応</strong><br>
+            レシート画像の原本保存、変更履歴の記録、取引先・日付・金額での検索に対応しています。<br><br>
             <strong>バックアップのお願い</strong><br>
-            ブラウザのキャッシュクリアでデータが消える可能性があります。定期的にJSONバックアップをお取りください。
+            ブラウザのキャッシュクリアでデータが消える可能性があります。定期的に「画像付きバックアップ」をお取りください。
           </div>
         </div>
 
@@ -366,6 +491,9 @@
         <h2 style="font-size:18px;font-weight:700;color:var(--secondary);margin:0">記録を編集</h2>
         <span id="queue-label" class="hidden" style="font-size:12px;font-weight:700;color:var(--primary);background:#FFF3E0;padding:4px 12px;border-radius:20px"></span>
       </div>
+
+      <!-- レシート画像プレビュー -->
+      <div id="edit-image-preview" class="hidden" style="margin-bottom:12px"></div>
 
       <div class="form-row">
         <div class="form-group" style="flex:1">
@@ -422,6 +550,9 @@
         <input type="text" id="edit-memo" class="form-input" placeholder="メモ（任意）">
       </div>
 
+      <!-- 変更履歴 -->
+      <div id="edit-audit-log" class="hidden" style="background:#f8f6f3;border-radius:10px;padding:10px;margin-top:8px"></div>
+
       <div class="edit-actions">
         <button class="btn btn-secondary" onclick="KakeiboApp.cancelEdit()">戻る</button>
         <button class="btn btn-primary" onclick="KakeiboApp.saveEdit()">保存</button>
@@ -430,23 +561,22 @@
     </div>
   </div>
 
-  <script src="../../shared/form-utils.js?v=6"></script>
-  <script src="db.js?v=6"></script>
-  <script src="chart.js?v=6"></script>
-  <script src="app.js?v=6"></script>
+  <script src="../../shared/form-utils.js?v=7"></script>
+  <script src="db.js?v=7"></script>
+  <script src="chart.js?v=7"></script>
+  <script src="app.js?v=7"></script>
 
   <!-- Service Worker 登録 -->
   <script>
     if ("serviceWorker" in navigator) {
-      // 古いSWのキャッシュをクリア
       caches.keys().then(function(names) {
         names.forEach(function(name) {
-          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v6") {
+          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v7") {
             caches.delete(name);
           }
         });
       });
-      navigator.serviceWorker.register("sw.js?v=6").catch(function () {});
+      navigator.serviceWorker.register("sw.js?v=7").catch(function () {});
     }
   </script>
 </body>

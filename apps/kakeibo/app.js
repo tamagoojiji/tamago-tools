@@ -1,6 +1,7 @@
 /**
  * かんたん家計簿 メインアプリ
  * IndexedDB ローカル保存 + GAS OCR連携
+ * 電子帳簿保存法対応: レシート画像保存・変更履歴・検索機能
  */
 var KakeiboApp = (function () {
   "use strict";
@@ -12,6 +13,7 @@ var KakeiboApp = (function () {
   var editingId = null;
   var ocrQueue = [];
   var dbReady = false;
+  var pendingImageBase64 = null; // OCR時のレシート画像を一時保持
 
   var CATEGORIES = [
     "食費", "日用品", "交通費", "住居費", "水道光熱費", "通信費",
@@ -36,18 +38,17 @@ var KakeiboApp = (function () {
     var now = new Date();
     currentMonth = now.getFullYear() + "-" + padZero(now.getMonth() + 1);
 
-    // イベントリスナーは即座にセット（DB初期化を待たない）
     setupTabs();
     setupInputForm();
     setupCamera();
+    setupSearch();
 
-    // DB初期化（失敗しても画面は動く）
     KakeiboDB.open().then(function () {
       dbReady = true;
       loadTodayTotal();
       loadHistory();
     }).catch(function (err) {
-      dbReady = true; // 再試行可能にする
+      dbReady = true;
       console.error("IndexedDB初期化エラー:", err);
       FormUtils.showToast("データベースの初期化に失敗しました。ページを再読み込みしてください。");
     });
@@ -137,6 +138,14 @@ var KakeiboApp = (function () {
     };
 
     KakeiboDB.addTransaction(tx).then(function () {
+      // 監査ログ
+      return KakeiboDB.addAuditLog({
+        transactionId: tx.id,
+        action: "create",
+        inputType: "manual",
+        snapshot: JSON.parse(JSON.stringify(tx))
+      });
+    }).then(function () {
       FormUtils.showToast("保存しました");
       document.getElementById("input-amount").value = "";
       document.getElementById("input-memo").value = "";
@@ -214,6 +223,9 @@ var KakeiboApp = (function () {
     var queueInfo = ocrQueue.length > 0 ? "（残り" + ocrQueue.length + "枚）" : "";
     showSpinner("レシートを読み取り中..." + queueInfo);
     compressImage(file, function (base64, mimeType) {
+      // 電子帳簿保存法: 原本画像を一時保持
+      pendingImageBase64 = base64;
+
       fetch(GAS_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
@@ -233,11 +245,13 @@ var KakeiboApp = (function () {
             showOcrResult(res.receipt);
           } else {
             FormUtils.showToast(res.error || "読み取りに失敗しました");
+            pendingImageBase64 = null;
             processNextInQueue();
           }
         } catch (err) {
           console.error("OCRレスポンスパースエラー:", err, text);
           FormUtils.showToast("レスポンスの解析に失敗しました");
+          pendingImageBase64 = null;
           processNextInQueue();
         }
       })
@@ -245,6 +259,7 @@ var KakeiboApp = (function () {
         hideSpinner();
         console.error("OCR通信エラー:", err);
         FormUtils.showToast("通信エラーが発生しました");
+        pendingImageBase64 = null;
         processNextInQueue();
       });
     });
@@ -307,6 +322,16 @@ var KakeiboApp = (function () {
     document.getElementById("edit-amount").value = receipt.total || "";
     document.getElementById("edit-category").value = receipt.category || "食費";
     document.getElementById("edit-memo").value = "";
+
+    // 画像プレビュー表示
+    var previewArea = document.getElementById("edit-image-preview");
+    if (previewArea && pendingImageBase64) {
+      previewArea.innerHTML = '<img src="data:image/jpeg;base64,' + pendingImageBase64 + '" style="max-width:100%;border-radius:8px;margin-top:8px">';
+      previewArea.classList.remove("hidden");
+    } else if (previewArea) {
+      previewArea.innerHTML = "";
+      previewArea.classList.add("hidden");
+    }
 
     var itemsEl = document.getElementById("edit-items");
     itemsEl.innerHTML = "";
@@ -399,23 +424,24 @@ var KakeiboApp = (function () {
       }
     }
 
+    var isEditing = !!editingId;
+    var txId = editingId || generateUniqueId();
     var tx = {
-      id: editingId || generateUniqueId(),
+      id: txId,
       date: date,
       store: document.getElementById("edit-store").value.trim(),
       items: items,
       total: amount,
       category: category || "食費",
       memo: document.getElementById("edit-memo").value.trim(),
-      inputType: editingId ? "edited" : "ocr",
-      createdAt: new Date().toISOString()
+      inputType: isEditing ? "edited" : "ocr",
+      createdAt: new Date().toISOString(),
+      hasImage: !!pendingImageBase64 || false
     };
-
-    console.log("saveEdit: 保存開始", JSON.stringify(tx));
 
     // 重複チェック（編集時はスキップ）
     KakeiboDB.getAllTransactions().then(function (all) {
-      if (!editingId) {
+      if (!isEditing) {
         for (var d = 0; d < all.length; d++) {
           var existing = all[d];
           if (existing.date === tx.date && existing.total === tx.total && existing.store === tx.store) {
@@ -424,12 +450,48 @@ var KakeiboApp = (function () {
           }
         }
       }
+
+      // 編集の場合、変更前のスナップショットを取得
+      if (isEditing) {
+        var oldTx = null;
+        for (var o = 0; o < all.length; o++) {
+          if (all[o].id === txId) { oldTx = all[o]; break; }
+        }
+        if (oldTx) {
+          // 既存画像がある場合はhasImageを保持
+          if (oldTx.hasImage && !pendingImageBase64) {
+            tx.hasImage = true;
+          }
+          return KakeiboDB.addAuditLog({
+            transactionId: txId,
+            action: "update",
+            before: JSON.parse(JSON.stringify(oldTx)),
+            after: JSON.parse(JSON.stringify(tx))
+          }).then(function () {
+            return KakeiboDB.addTransaction(tx);
+          });
+        }
+      }
+
       return KakeiboDB.addTransaction(tx);
     }).then(function () {
-      return KakeiboDB.getAllTransactions();
-    }).then(function (all) {
-      console.log("saveEdit: 保存完了。全" + all.length + "件");
-      FormUtils.showToast("保存しました（全" + all.length + "件）");
+      // 新規作成の監査ログ
+      if (!isEditing) {
+        return KakeiboDB.addAuditLog({
+          transactionId: txId,
+          action: "create",
+          inputType: tx.inputType,
+          snapshot: JSON.parse(JSON.stringify(tx))
+        });
+      }
+    }).then(function () {
+      // 電子帳簿保存法: レシート画像を保存
+      if (pendingImageBase64) {
+        return KakeiboDB.saveImage(txId, pendingImageBase64, "image/jpeg");
+      }
+    }).then(function () {
+      FormUtils.showToast("保存しました");
+      pendingImageBase64 = null;
       editingId = null;
       loadTodayTotal();
       if (ocrQueue.length > 0) {
@@ -447,6 +509,7 @@ var KakeiboApp = (function () {
 
   function cancelEdit() {
     editingId = null;
+    pendingImageBase64 = null;
     if (ocrQueue.length > 0) {
       processNextInQueue();
     } else {
@@ -458,16 +521,10 @@ var KakeiboApp = (function () {
   function loadHistory() {
     updateMonthSelector("history");
 
-    console.log("loadHistory: currentMonth=" + currentMonth);
     KakeiboDB.getAllTransactions().then(function (allTxs) {
-      console.log("loadHistory: 全件=" + allTxs.length);
-      if (allTxs.length > 0) {
-        console.log("loadHistory: 日付一覧=" + allTxs.map(function(t){return t.date}).join(","));
-      }
       var txs = allTxs.filter(function (tx) {
         return tx.date && tx.date.substring(0, 7) === currentMonth;
       });
-      console.log("loadHistory: 今月分=" + txs.length);
 
       var container = document.getElementById("history-list");
 
@@ -494,11 +551,12 @@ var KakeiboApp = (function () {
           html += '<div class="section-title">' + FormUtils.formatDate(tx.date) + '</div>';
         }
         var icon = CATEGORY_ICONS[tx.category] || "📦";
-        var color = KakeiboChart.getColor(tx.category);
+        var color = safeGetColor(tx.category);
+        var imgBadge = tx.hasImage ? '<span style="font-size:10px;margin-left:4px">📷</span>' : '';
         html += '<div class="data-card" data-id="' + tx.id + '" onclick="KakeiboApp.openDetail(\'' + tx.id + '\')">' +
           '<div class="data-card-icon" style="background:' + color + '20">' + icon + '</div>' +
           '<div class="data-card-body">' +
-            '<div class="data-card-title">' + escapeHtml(tx.memo || tx.store || tx.category) + '</div>' +
+            '<div class="data-card-title">' + escapeHtml(tx.memo || tx.store || tx.category) + imgBadge + '</div>' +
             '<div class="data-card-sub">' + tx.category + '</div>' +
           '</div>' +
           '<div class="data-card-right">' +
@@ -518,6 +576,7 @@ var KakeiboApp = (function () {
     KakeiboDB.getTransaction(id).then(function (tx) {
       if (!tx) return;
       editingId = tx.id;
+      pendingImageBase64 = null; // 既存画像は別途読み込む
       document.getElementById("edit-date").value = tx.date;
       document.getElementById("edit-store").value = tx.store || "";
       document.getElementById("edit-amount").value = tx.total;
@@ -532,7 +591,47 @@ var KakeiboApp = (function () {
         }
       }
 
+      // 画像プレビュー読み込み
+      var previewArea = document.getElementById("edit-image-preview");
+      if (previewArea) {
+        previewArea.innerHTML = "";
+        previewArea.classList.add("hidden");
+        if (tx.hasImage) {
+          KakeiboDB.getImage(id).then(function (imgData) {
+            if (imgData && imgData.imageBase64) {
+              previewArea.innerHTML =
+                '<div style="position:relative">' +
+                  '<img src="data:' + (imgData.mimeType || "image/jpeg") + ';base64,' + imgData.imageBase64 + '" style="max-width:100%;border-radius:8px;cursor:pointer" onclick="KakeiboApp.showImageViewer(\'' + id + '\')">' +
+                  '<div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.6);color:#fff;font-size:10px;padding:2px 8px;border-radius:4px">タップで拡大</div>' +
+                '</div>';
+              previewArea.classList.remove("hidden");
+            }
+          }).catch(function () {});
+        }
+      }
+
+      // 変更履歴を表示
+      var auditArea = document.getElementById("edit-audit-log");
+      if (auditArea) {
+        auditArea.innerHTML = "";
+        auditArea.classList.add("hidden");
+        KakeiboDB.getAuditLogByTransaction(id).then(function (logs) {
+          if (logs.length > 0) {
+            var html = '<div style="font-size:12px;font-weight:700;color:var(--text-light);margin-bottom:6px">変更履歴</div>';
+            for (var l = 0; l < logs.length; l++) {
+              var log = logs[l];
+              var actionLabel = log.action === "create" ? "作成" : log.action === "update" ? "編集" : log.action === "delete" ? "削除" : log.action;
+              var ts = log.timestamp ? log.timestamp.substring(0, 16).replace("T", " ") : "";
+              html += '<div style="font-size:11px;color:var(--text-light);padding:2px 0">' + ts + ' — ' + actionLabel + '</div>';
+            }
+            auditArea.innerHTML = html;
+            auditArea.classList.remove("hidden");
+          }
+        }).catch(function () {});
+      }
+
       document.getElementById("btn-delete-tx").classList.remove("hidden");
+      document.getElementById("queue-label").classList.add("hidden");
       FormUtils.showScreen("edit-screen");
     }).catch(function (err) {
       console.error("詳細読み込みエラー:", err);
@@ -543,15 +642,128 @@ var KakeiboApp = (function () {
     if (!editingId) return;
     if (!confirm("この記録を削除しますか？")) return;
 
-    KakeiboDB.deleteTransaction(editingId).then(function () {
+    var txId = editingId;
+
+    // 削除前のスナップショットを取得して監査ログに記録
+    KakeiboDB.getTransaction(txId).then(function (tx) {
+      return KakeiboDB.addAuditLog({
+        transactionId: txId,
+        action: "delete",
+        snapshot: tx ? JSON.parse(JSON.stringify(tx)) : null
+      });
+    }).then(function () {
+      return KakeiboDB.deleteTransaction(txId);
+    }).then(function () {
+      // 画像も削除（監査ログには残る）
+      return KakeiboDB.deleteImage(txId);
+    }).then(function () {
       FormUtils.showToast("削除しました");
       editingId = null;
+      pendingImageBase64 = null;
       FormUtils.showScreen("main-screen");
       loadHistory();
       loadTodayTotal();
     }).catch(function (err) {
       console.error("削除エラー:", err);
       FormUtils.showToast("削除に失敗しました");
+    });
+  }
+
+  // === 画像ビューア ===
+  function showImageViewer(transactionId) {
+    KakeiboDB.getImage(transactionId).then(function (imgData) {
+      if (!imgData || !imgData.imageBase64) {
+        FormUtils.showToast("画像が見つかりません");
+        return;
+      }
+      var viewer = document.getElementById("image-viewer");
+      var img = document.getElementById("viewer-image");
+      if (viewer && img) {
+        img.src = "data:" + (imgData.mimeType || "image/jpeg") + ";base64," + imgData.imageBase64;
+        viewer.classList.remove("hidden");
+      }
+    }).catch(function (err) {
+      console.error("画像読み込みエラー:", err);
+    });
+  }
+
+  function closeImageViewer() {
+    var viewer = document.getElementById("image-viewer");
+    if (viewer) {
+      viewer.classList.add("hidden");
+      document.getElementById("viewer-image").src = "";
+    }
+  }
+
+  // === 検索機能 (電子帳簿保存法: 日付・金額・取引先検索) ===
+  function setupSearch() {
+    var searchBtn = document.getElementById("btn-search");
+    var clearBtn = document.getElementById("btn-search-clear");
+    if (searchBtn) {
+      searchBtn.addEventListener("click", executeSearch);
+    }
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function () {
+        document.getElementById("search-store").value = "";
+        document.getElementById("search-date-from").value = "";
+        document.getElementById("search-date-to").value = "";
+        document.getElementById("search-amount-min").value = "";
+        document.getElementById("search-amount-max").value = "";
+        document.getElementById("search-results").innerHTML = "";
+        document.getElementById("search-results").classList.add("hidden");
+      });
+    }
+  }
+
+  function executeSearch() {
+    var query = {
+      store: document.getElementById("search-store").value.trim(),
+      dateFrom: document.getElementById("search-date-from").value,
+      dateTo: document.getElementById("search-date-to").value,
+      amountMin: document.getElementById("search-amount-min").value,
+      amountMax: document.getElementById("search-amount-max").value
+    };
+
+    if (!query.store && !query.dateFrom && !query.dateTo && !query.amountMin && !query.amountMax) {
+      FormUtils.showToast("検索条件を入力してください");
+      return;
+    }
+
+    KakeiboDB.searchTransactions(query).then(function (results) {
+      var container = document.getElementById("search-results");
+      container.classList.remove("hidden");
+
+      if (results.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-state-text">該当する取引はありません</div></div>';
+        return;
+      }
+
+      var total = 0;
+      var html = '<div style="font-size:13px;font-weight:700;color:var(--text-light);margin-bottom:8px">' + results.length + '件ヒット</div>';
+
+      for (var i = 0; i < results.length; i++) {
+        var tx = results[i];
+        total += tx.total;
+        var icon = CATEGORY_ICONS[tx.category] || "📦";
+        var color = safeGetColor(tx.category);
+        var imgBadge = tx.hasImage ? '<span style="font-size:10px;margin-left:4px">📷</span>' : '';
+        html += '<div class="data-card" data-id="' + tx.id + '" onclick="KakeiboApp.openDetail(\'' + tx.id + '\')">' +
+          '<div class="data-card-icon" style="background:' + color + '20">' + icon + '</div>' +
+          '<div class="data-card-body">' +
+            '<div class="data-card-title">' + escapeHtml(tx.memo || tx.store || tx.category) + imgBadge + '</div>' +
+            '<div class="data-card-sub">' + tx.date + ' / ' + tx.category + '</div>' +
+          '</div>' +
+          '<div class="data-card-right">' +
+            '<div class="data-card-amount">' + tx.total.toLocaleString() + '円</div>' +
+          '</div>' +
+        '</div>';
+      }
+      html += '<div style="text-align:right;font-size:13px;font-weight:700;color:var(--secondary);margin-top:8px">合計: ' + total.toLocaleString() + '円</div>';
+
+      container.innerHTML = html;
+    }).catch(function (err) {
+      console.error("検索エラー:", err);
+      FormUtils.showToast("検索に失敗しました");
     });
   }
 
@@ -637,7 +849,7 @@ var KakeiboApp = (function () {
           breakdownHtml +=
             '<div class="bar-row">' +
               '<div class="bar-label">' + cdIcon + '</div>' +
-              '<div class="bar-track"><div class="bar-fill" style="width:' + pctCat + '%;background:' + KakeiboChart.getColor(cd.category) + '"></div></div>' +
+              '<div class="bar-track"><div class="bar-fill" style="width:' + pctCat + '%;background:' + safeGetColor(cd.category) + '"></div></div>' +
               '<div class="bar-value">' + cd.total.toLocaleString() + '円</div>' +
             '</div>';
         }
@@ -705,17 +917,23 @@ var KakeiboApp = (function () {
     });
   }
 
-  function exportData() {
-    KakeiboDB.exportAll().then(function (data) {
+  function exportData(includeImages) {
+    if (includeImages) {
+      showSpinner("画像付きバックアップを作成中...");
+    }
+    KakeiboDB.exportAll(!!includeImages).then(function (data) {
+      hideSpinner();
       var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a");
       a.href = url;
-      a.download = "kakeibo_backup_" + todayStr() + ".json";
+      var suffix = includeImages ? "_full" : "";
+      a.download = "kakeibo_backup" + suffix + "_" + todayStr() + ".json";
       a.click();
       URL.revokeObjectURL(url);
       FormUtils.showToast("エクスポートしました");
     }).catch(function (err) {
+      hideSpinner();
       console.error("エクスポートエラー:", err);
       FormUtils.showToast("エクスポートに失敗しました");
     });
@@ -819,6 +1037,15 @@ var KakeiboApp = (function () {
     document.getElementById("spinner").classList.add("hidden");
   }
 
+  function safeGetColor(category) {
+    try {
+      if (typeof KakeiboChart !== "undefined") return KakeiboChart.getColor(category);
+      return "#999";
+    } catch (e) {
+      return "#999";
+    }
+  }
+
   function escapeHtml(str) {
     var div = document.createElement("div");
     div.textContent = str;
@@ -839,7 +1066,10 @@ var KakeiboApp = (function () {
     exportData: exportData,
     exportCSV: exportCSV,
     importData: importData,
-    clearAllData: clearAllData
+    clearAllData: clearAllData,
+    showImageViewer: showImageViewer,
+    closeImageViewer: closeImageViewer,
+    executeSearch: executeSearch
   };
 })();
 

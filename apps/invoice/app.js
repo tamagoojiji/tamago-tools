@@ -83,7 +83,7 @@ var InvoiceApp = (function () {
         '</div>' +
         '<div>' +
           '<label>単価</label>' +
-          '<input type="number" id="item-price-' + idx + '" value="' + ((item && item.unitPrice) || '') + '" placeholder="0" oninput="InvoiceApp.calcTotal()">' +
+          '<div style="display:flex;align-items:center;gap:2px;"><input type="number" id="item-price-' + idx + '" value="' + ((item && item.unitPrice) || '') + '" placeholder="0" oninput="InvoiceApp.calcTotal()" style="flex:1;"><span style="font-size:13px;">円</span></div>' +
         '</div>' +
         '<div>' +
           '<label>数量</label>' +

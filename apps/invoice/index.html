@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>請求書ツール | たまごツール</title>
+  <link rel="stylesheet" href="../../style.css?v=2">
+  <style>
+    .invoice-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .invoice-header h2 {
+      font-size: 18px;
+      margin: 0;
+      flex: 1;
+    }
+    .back-btn {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px 8px;
+      color: var(--text);
+    }
+
+    /* 品目リスト */
+    .item-row {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 8px;
+    }
+    .item-row-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .item-row-header strong {
+      font-size: 14px;
+    }
+    .item-remove-btn {
+      background: none;
+      border: none;
+      color: var(--danger);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 4px;
+    }
+    .item-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+    .item-fields label {
+      font-size: 11px;
+      color: var(--text-light);
+      display: block;
+      margin-bottom: 2px;
+    }
+    .item-fields input {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .item-name-field {
+      grid-column: 1 / -1;
+    }
+    .add-item-btn {
+      width: 100%;
+      padding: 10px;
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      background: transparent;
+      color: var(--text-light);
+      font-size: 14px;
+      cursor: pointer;
+      margin-bottom: 16px;
+    }
+    .add-item-btn:active {
+      background: #f5f5f5;
+    }
+
+    /* 金額サマリー */
+    .amount-summary {
+      background: #FFF8F0;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .amount-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 14px;
+    }
+    .amount-row.total {
+      font-size: 18px;
+      font-weight: bold;
+      color: var(--primary-dark);
+      border-top: 2px solid var(--primary);
+      margin-top: 8px;
+      padding-top: 8px;
+    }
+
+    /* 請求書カード */
+    .invoice-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+    }
+    .invoice-card:active {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .invoice-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .invoice-card-number {
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .invoice-card-client {
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+    .invoice-card-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--text-light);
+    }
+    .invoice-card-amount {
+      font-weight: bold;
+      font-size: 16px;
+      color: var(--text);
+    }
+
+    /* ステータスバッジ */
+    .status-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    .status-draft { background: #E8E8E8; color: #666; }
+    .status-sent { background: #E3F2FD; color: #1976D2; }
+    .status-paid { background: #E8F5E9; color: #388E3C; }
+
+    /* プレビュー */
+    .preview-box {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .preview-title {
+      text-align: center;
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 16px;
+    }
+    .preview-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: var(--text-light);
+    }
+    .preview-client {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .preview-total-box {
+      background: #FFF8F0;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .preview-total-label {
+      font-size: 12px;
+      color: var(--text-light);
+    }
+    .preview-total-amount {
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--primary-dark);
+    }
+    .preview-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .preview-table th {
+      background: var(--primary);
+      color: #fff;
+      padding: 6px 8px;
+      text-align: left;
+      font-weight: bold;
+    }
+    .preview-table th:last-child,
+    .preview-table td:last-child {
+      text-align: right;
+    }
+    .preview-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .preview-section {
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .preview-section-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: var(--text-light);
+      margin-bottom: 4px;
+    }
+
+    /* 税率選択 */
+    .tax-rate-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .tax-rate-btn {
+      flex: 1;
+      padding: 8px;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .tax-rate-btn.active {
+      border-color: var(--primary);
+      background: #FFF8F0;
+      font-weight: bold;
+    }
+
+    /* アクションボタン群 */
+    .action-btns {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .action-btns .btn {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- スピナー -->
+  <div id="spinner" class="spinner-overlay hidden">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- 画面1: メイン（タブ） -->
+  <div id="main-screen" data-screen class="screen">
+    <div class="container">
+      <div class="invoice-header">
+        <a href="../../" class="back-btn">←</a>
+        <h2>請求書ツール</h2>
+        <button class="btn btn-primary" onclick="InvoiceApp.showCreate()" style="padding:8px 16px;font-size:13px;">+ 新規作成</button>
+      </div>
+
+      <div class="tab-nav">
+        <button class="tab-btn active" onclick="InvoiceApp.switchTab('list')">請求書一覧</button>
+        <button class="tab-btn" onclick="InvoiceApp.switchTab('profile')">事業者情報</button>
+      </div>
+
+      <!-- 一覧タブ -->
+      <div id="tab-list" class="tab-content">
+        <div id="invoice-list"></div>
+      </div>
+
+      <!-- 事業者情報タブ -->
+      <div id="tab-profile" class="tab-content hidden">
+        <div class="form-group">
+          <label class="form-label">屋号・事業者名</label>
+          <input type="text" id="prof-name" class="form-input" placeholder="例：たまご事務所">
+        </div>
+        <div class="form-group">
+          <label class="form-label">住所</label>
+          <input type="text" id="prof-address" class="form-input" placeholder="例：大阪府大阪市...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">電話番号</label>
+          <input type="tel" id="prof-phone" class="form-input" placeholder="例：090-1234-5678">
+        </div>
+        <div class="form-group">
+          <label class="form-label">メールアドレス</label>
+          <input type="email" id="prof-email" class="form-input" placeholder="例：info@example.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">振込先</label>
+          <textarea id="prof-bank" class="form-input" rows="2" placeholder="例：〇〇銀行 △△支店 普通 1234567"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">インボイス登録番号</label>
+          <input type="text" id="prof-reg" class="form-input" placeholder="例：T1234567890123">
+        </div>
+        <button class="btn btn-primary" onclick="InvoiceApp.saveProfile()" style="width:100%;">保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 画面2: 新規作成 -->
+  <div id="create-screen" data-screen class="screen hidden">
+    <div class="container">
+      <div class="invoice-header">
+        <button class="back-btn" onclick="InvoiceApp.backToMain()">←</button>
+        <h2>請求書を作成</h2>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">請求先（宛名）</label>
+        <input type="text" id="inv-client" class="form-input" placeholder="例：株式会社〇〇">
+      </div>
+      <div class="form-group">
+        <label class="form-label">請求先住所（任意）</label>
+        <input type="text" id="inv-client-address" class="form-input" placeholder="例：東京都渋谷区...">
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1;">
+          <label class="form-label">発行日</label>
+          <input type="date" id="inv-issue-date" class="form-input">
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label class="form-label">支払期限</label>
+          <input type="date" id="inv-due-date" class="form-input">
+        </div>
+      </div>
+
+      <label class="form-label" style="margin-bottom:8px;">品目</label>
+      <div id="items-container"></div>
+      <button class="add-item-btn" onclick="InvoiceApp.addItemRow()">＋ 品目を追加</button>
+
+      <label class="form-label">消費税率</label>
+      <div class="tax-rate-group">
+        <button class="tax-rate-btn active" onclick="InvoiceApp.setTaxRate(10, this)">10%</button>
+        <button class="tax-rate-btn" onclick="InvoiceApp.setTaxRate(8, this)">8%（軽減）</button>
+        <button class="tax-rate-btn" onclick="InvoiceApp.setTaxRate(0, this)">なし</button>
+      </div>
+
+      <div class="amount-summary">
+        <div class="amount-row"><span>小計</span><span id="sum-subtotal">¥0</span></div>
+        <div class="amount-row"><span>消費税</span><span id="sum-tax">¥0</span></div>
+        <div class="amount-row total"><span>合計</span><span id="sum-total">¥0</span></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">備考（任意）</label>
+        <textarea id="inv-notes" class="form-input" rows="2" placeholder="例：お振込手数料はご負担ください"></textarea>
+      </div>
+
+      <button class="btn btn-primary" onclick="InvoiceApp.preview()" style="width:100%;">プレビュー</button>
+    </div>
+  </div>
+
+  <!-- 画面3: プレビュー -->
+  <div id="preview-screen" data-screen class="screen hidden">
+    <div class="container">
+      <div class="invoice-header">
+        <button class="back-btn" onclick="InvoiceApp.backToCreate()">←</button>
+        <h2>プレビュー</h2>
+      </div>
+
+      <div class="preview-box">
+        <div class="preview-title">請求書</div>
+        <div class="preview-meta">
+          <span id="prev-number"></span>
+          <span id="prev-dates"></span>
+        </div>
+        <div class="preview-client" id="prev-client"></div>
+        <div id="prev-client-address" style="font-size:13px;color:var(--text-light);margin-bottom:12px;"></div>
+
+        <div class="preview-total-box">
+          <div class="preview-total-label">ご請求金額</div>
+          <div class="preview-total-amount" id="prev-total"></div>
+        </div>
+
+        <table class="preview-table">
+          <thead>
+            <tr><th>品目</th><th>数量</th><th>単価</th><th>金額</th></tr>
+          </thead>
+          <tbody id="prev-items"></tbody>
+        </table>
+
+        <div class="amount-summary" style="margin-top:12px;">
+          <div class="amount-row"><span>小計</span><span id="prev-subtotal"></span></div>
+          <div class="amount-row"><span>消費税</span><span id="prev-tax"></span></div>
+          <div class="amount-row total"><span>合計</span><span id="prev-total2"></span></div>
+        </div>
+
+        <div class="preview-section" id="prev-bank-section">
+          <div class="preview-section-title">振込先</div>
+          <div id="prev-bank" style="font-size:13px;"></div>
+        </div>
+
+        <div class="preview-section" id="prev-notes-section">
+          <div class="preview-section-title">備考</div>
+          <div id="prev-notes" style="font-size:13px;"></div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="InvoiceApp.saveAndGenerate()" style="width:100%;margin-bottom:8px;">保存してPDF作成</button>
+      <button class="btn btn-secondary" onclick="InvoiceApp.saveAsDraft()" style="width:100%;">下書き保存</button>
+    </div>
+  </div>
+
+  <!-- 画面4: 詳細 -->
+  <div id="detail-screen" data-screen class="screen hidden">
+    <div class="container">
+      <div class="invoice-header">
+        <button class="back-btn" onclick="InvoiceApp.backToMain()">←</button>
+        <h2 id="detail-title">請求書詳細</h2>
+      </div>
+
+      <div class="preview-box" id="detail-preview"></div>
+
+      <div class="action-btns">
+        <button class="btn btn-primary" id="btn-gen-pdf" onclick="InvoiceApp.generatePdf()">PDF作成</button>
+        <button class="btn btn-outline" id="btn-status" onclick="InvoiceApp.cycleStatus()">送付済み</button>
+      </div>
+      <div id="pdf-link-area" class="hidden" style="text-align:center;margin-bottom:12px;">
+        <a id="pdf-download-link" href="#" target="_blank" class="btn btn-secondary" style="display:inline-block;">PDFをダウンロード</a>
+      </div>
+      <button class="btn btn-outline" onclick="InvoiceApp.editInvoice()" style="width:100%;margin-bottom:8px;">編集する</button>
+      <button class="btn" onclick="InvoiceApp.deleteInvoice()" style="width:100%;color:var(--danger);border:1px solid var(--danger);">削除する</button>
+    </div>
+  </div>
+
+  <script src="../../shared/form-utils.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

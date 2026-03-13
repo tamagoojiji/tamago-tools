@@ -7,6 +7,7 @@ var ReceiptApp = (function () {
 
   // === 設定 ===
   var GAS_URL = "https://script.google.com/macros/s/AKfycbwvemxonI88X44s0mgJ-mkLCHDvXnhqieExvsv026ZKaQU_462bePBPQqucu1mPslhFPA/exec";
+  var API_KEY = "a5676e39ee5a4f568378f46d21301466e6094fb19c743590";
 
   var currentReceipt = null;
   var userId = null;
@@ -37,6 +38,7 @@ var ReceiptApp = (function () {
 
   // === GAS POSTヘルパー（リダイレクト対応） ===
   function gasPostJson(data) {
+    data.apiKey = API_KEY;
     return fetch(GAS_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
@@ -84,7 +86,7 @@ var ReceiptApp = (function () {
   // === 残り回数チェック ===
   function checkRemaining() {
     if (!GAS_URL) return;
-    FormUtils.gasGet(GAS_URL, { action: "check", userId: userId })
+    FormUtils.gasGet(GAS_URL, { apiKey: API_KEY, action: "check", userId: userId })
       .then(function (res) {
         var container = document.getElementById("remaining-container");
         if (!res.ok) {
@@ -301,7 +303,7 @@ var ReceiptApp = (function () {
 
     listEl.innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto 8px;width:32px;height:32px;border-width:3px"></div><div class="empty-state-text">読み込み中...</div></div>';
 
-    FormUtils.gasGet(GAS_URL, { action: "list", userId: userId })
+    FormUtils.gasGet(GAS_URL, { apiKey: API_KEY, action: "list", userId: userId })
       .then(function (res) {
         if (!res.ok || !res.receipts || res.receipts.length === 0) {
           listEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">まだレシートがありません</div></div>';
@@ -421,7 +423,7 @@ var ReceiptApp = (function () {
     statsEl.innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto 8px;width:32px;height:32px;border-width:3px"></div></div>';
     chartEl.innerHTML = "";
 
-    FormUtils.gasGet(GAS_URL, { action: "summary", userId: userId, month: currentMonth })
+    FormUtils.gasGet(GAS_URL, { apiKey: API_KEY, action: "summary", userId: userId, month: currentMonth })
       .then(function (res) {
         if (!res.ok) {
           statsEl.innerHTML = '<div class="empty-state"><div class="empty-state-text">データなし</div></div>';

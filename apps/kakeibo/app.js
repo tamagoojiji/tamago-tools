@@ -7,6 +7,7 @@ var KakeiboApp = (function () {
   "use strict";
 
   var GAS_URL = "https://script.google.com/macros/s/AKfycbwvemxonI88X44s0mgJ-mkLCHDvXnhqieExvsv026ZKaQU_462bePBPQqucu1mPslhFPA/exec";
+  var API_KEY = "a5676e39ee5a4f568378f46d21301466e6094fb19c743590";
   var userId = null;
   var currentTab = "input";
   var currentMonth = null;
@@ -254,6 +255,7 @@ var KakeiboApp = (function () {
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({
           action: "kakeibo_scan",
+          apiKey: API_KEY,
           userId: userId,
           imageBase64: base64,
           mimeType: mimeType
@@ -1210,6 +1212,7 @@ var KakeiboApp = (function () {
           headers: { "Content-Type": "text/plain" },
           body: JSON.stringify({
             action: "kakeibo_backup",
+            apiKey: API_KEY,
             lookupKey: hashes[0],
             emailHash: hashes[1],
             data: data
@@ -1248,7 +1251,7 @@ var KakeiboApp = (function () {
 
     showSpinner("バックアップを復元中...");
     sha256(email + pin).then(function (lookupKey) {
-      return fetch(GAS_URL + "?action=kakeibo_restore&lookupKey=" + encodeURIComponent(lookupKey));
+      return fetch(GAS_URL + "?action=kakeibo_restore&apiKey=" + encodeURIComponent(API_KEY) + "&lookupKey=" + encodeURIComponent(lookupKey));
     }).then(function (r) { return r.text(); })
     .then(function (text) {
       var res = JSON.parse(text);
@@ -1299,6 +1302,7 @@ var KakeiboApp = (function () {
       headers: { "Content-Type": "text/plain" },
       body: JSON.stringify({
         action: "kakeibo_request_pin_reset",
+        apiKey: API_KEY,
         email: email
       })
     }).then(function (r) { return r.text(); })
@@ -1339,6 +1343,7 @@ var KakeiboApp = (function () {
       headers: { "Content-Type": "text/plain" },
       body: JSON.stringify({
         action: "kakeibo_reset_pin",
+        apiKey: API_KEY,
         email: email,
         code: code,
         newPin: newPin
@@ -1430,6 +1435,7 @@ var KakeiboApp = (function () {
 
     var body = {
       action: action,
+      apiKey: API_KEY,
       userId: userId
     };
     if (data.transaction) body.transaction = data.transaction;
@@ -1464,7 +1470,7 @@ var KakeiboApp = (function () {
     }
     showSpinner("クラウドから同期中...");
 
-    fetch(GAS_URL + "?action=kakeibo_list&userId=" + encodeURIComponent(userId))
+    fetch(GAS_URL + "?action=kakeibo_list&apiKey=" + encodeURIComponent(API_KEY) + "&userId=" + encodeURIComponent(userId))
     .then(function (r) { return r.text(); })
     .then(function (text) {
       var res = JSON.parse(text);

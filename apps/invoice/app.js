@@ -555,7 +555,7 @@ var InvoiceApp = (function () {
     if (items.length === 0) addItemRow();
 
     // 税率復元
-    currentTaxRate = currentInvoice.taxRate || 10;
+    currentTaxRate = typeof currentInvoice.taxRate === "number" ? currentInvoice.taxRate : 10;
     var btns = document.querySelectorAll(".tax-rate-btn");
     for (var j = 0; j < btns.length; j++) {
       btns[j].classList.remove("active");

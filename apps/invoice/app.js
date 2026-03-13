@@ -78,7 +78,7 @@ var InvoiceApp = (function () {
         '<div style="grid-column:1/-1;display:flex;gap:8px;">' +
           '<div style="flex:1;"><label>納品日</label>' +
           '<input type="date" id="item-date-' + idx + '" value="' + ((item && item.deliveryDate) || '') + '"></div>' +
-          '<div style="flex:2;"><label>品目・納品書番号</label>' +
+          '<div style="flex:2;"><label>品名</label>' +
           '<input type="text" id="item-name-' + idx + '" placeholder="例：サポート費" value="' + ((item && item.name) || '') + '" oninput="InvoiceApp.calcTotal()"></div>' +
         '</div>' +
         '<div>' +
@@ -91,7 +91,20 @@ var InvoiceApp = (function () {
         '</div>' +
         '<div>' +
           '<label>単位</label>' +
-          '<input type="text" id="item-unit-' + idx + '" value="' + ((item && item.unit) || '式') + '" placeholder="式">' +
+          '<select id="item-unit-' + idx + '">' +
+            '<option value="式"' + ((item && item.unit) === '式' || !(item && item.unit) ? ' selected' : '') + '>式</option>' +
+            '<option value="個"' + ((item && item.unit) === '個' ? ' selected' : '') + '>個</option>' +
+            '<option value="本"' + ((item && item.unit) === '本' ? ' selected' : '') + '>本</option>' +
+            '<option value="枚"' + ((item && item.unit) === '枚' ? ' selected' : '') + '>枚</option>' +
+            '<option value="台"' + ((item && item.unit) === '台' ? ' selected' : '') + '>台</option>' +
+            '<option value="件"' + ((item && item.unit) === '件' ? ' selected' : '') + '>件</option>' +
+            '<option value="時間"' + ((item && item.unit) === '時間' ? ' selected' : '') + '>時間</option>' +
+            '<option value="日"' + ((item && item.unit) === '日' ? ' selected' : '') + '>日</option>' +
+            '<option value="月"' + ((item && item.unit) === '月' ? ' selected' : '') + '>月</option>' +
+            '<option value="回"' + ((item && item.unit) === '回' ? ' selected' : '') + '>回</option>' +
+            '<option value="セット"' + ((item && item.unit) === 'セット' ? ' selected' : '') + '>セット</option>' +
+            '<option value="kg"' + ((item && item.unit) === 'kg' ? ' selected' : '') + '>kg</option>' +
+          '</select>' +
         '</div>' +
       '</div>';
 
@@ -177,6 +190,7 @@ var InvoiceApp = (function () {
     document.getElementById("inv-client-address").value = "";
     document.getElementById("inv-client-building").value = "";
     document.getElementById("inv-client-person").value = "";
+    document.getElementById("inv-client-honorific").value = "様";
     document.getElementById("inv-notes").value = "";
     document.getElementById("items-container").innerHTML = "";
     itemCounter = 0;
@@ -213,7 +227,9 @@ var InvoiceApp = (function () {
 
     var clientZip = document.getElementById("inv-client-zip").value.trim();
     var clientBuilding = document.getElementById("inv-client-building").value.trim();
-    var clientPerson = document.getElementById("inv-client-person").value.trim();
+    var personName = document.getElementById("inv-client-person").value.trim();
+    var honorific = document.getElementById("inv-client-honorific").value;
+    var clientPerson = personName ? (personName + (honorific ? " " + honorific : "")) : "";
     var clientAddr = document.getElementById("inv-client-address").value.trim();
 
     document.getElementById("prev-number").textContent = editingInvoiceId ? "(既存)" : "(保存時に自動採番)";
@@ -284,7 +300,11 @@ var InvoiceApp = (function () {
       clientZip: document.getElementById("inv-client-zip").value.trim(),
       clientAddress: document.getElementById("inv-client-address").value.trim(),
       clientBuilding: document.getElementById("inv-client-building").value.trim(),
-      clientPerson: document.getElementById("inv-client-person").value.trim(),
+      clientPerson: (function() {
+        var n = document.getElementById("inv-client-person").value.trim();
+        var h = document.getElementById("inv-client-honorific").value;
+        return n ? (n + (h ? " " + h : "")) : "";
+      })(),
       issueDate: document.getElementById("inv-issue-date").value,
       dueDate: document.getElementById("inv-due-date").value,
       items: items,
@@ -542,7 +562,19 @@ var InvoiceApp = (function () {
     document.getElementById("inv-client-zip").value = currentInvoice.clientZip || "";
     document.getElementById("inv-client-address").value = currentInvoice.clientAddress || "";
     document.getElementById("inv-client-building").value = currentInvoice.clientBuilding || "";
-    document.getElementById("inv-client-person").value = currentInvoice.clientPerson || "";
+    // 敬称を分離して復元
+    var personFull = currentInvoice.clientPerson || "";
+    var honorifics = ["様", "御中", "殿", "先生"];
+    var foundHonorific = "";
+    for (var h = 0; h < honorifics.length; h++) {
+      if (personFull.endsWith(" " + honorifics[h])) {
+        foundHonorific = honorifics[h];
+        personFull = personFull.slice(0, -(honorifics[h].length + 1));
+        break;
+      }
+    }
+    document.getElementById("inv-client-person").value = personFull;
+    document.getElementById("inv-client-honorific").value = foundHonorific;
     document.getElementById("inv-issue-date").value = currentInvoice.issueDate || "";
     document.getElementById("inv-due-date").value = currentInvoice.dueDate || "";
     document.getElementById("inv-notes").value = currentInvoice.notes || "";

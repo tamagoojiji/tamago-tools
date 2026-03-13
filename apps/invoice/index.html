@@ -62,7 +62,8 @@
       display: block;
       margin-bottom: 2px;
     }
-    .item-fields input {
+    .item-fields input,
+    .item-fields select {
       width: 100%;
       padding: 6px 8px;
       border: 1px solid var(--border);
@@ -347,7 +348,16 @@
         </div>
         <div class="form-group">
           <label class="form-label" style="font-size:12px;">担当者名（任意）</label>
-          <input type="text" id="inv-client-person" class="form-input" placeholder="例：山田 太郎 様">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="inv-client-person" class="form-input" placeholder="例：山田 太郎" style="flex:1;">
+            <select id="inv-client-honorific" class="form-input" style="width:80px;">
+              <option value="様">様</option>
+              <option value="御中">御中</option>
+              <option value="殿">殿</option>
+              <option value="先生">先生</option>
+              <option value="">なし</option>
+            </select>
+          </div>
         </div>
       </div>
 

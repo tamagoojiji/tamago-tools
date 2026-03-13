@@ -1,25 +1,196 @@
 /**
  * 請求書ツール フロントエンド
+ * データはすべてlocalStorageに保存（GAS不要）
  */
 var InvoiceApp = (function () {
   "use strict";
 
+  // ユーザースコープ: 同一端末の複数ユーザーを分離
+  var scopeId = "";
+  var STORAGE_KEY_INVOICES = "";
+  var STORAGE_KEY_PROFILE = "";
+  var STORAGE_KEY_NEXT_SEQ = "";
+  var STORAGE_KEY_MIGRATED = "";
+
   var GAS_URL = "https://script.google.com/macros/s/AKfycbyQEYHQP1Ckyh58CC2xcIxIzKukX-PEOXgoqkKiAzPBaV3Io1avF1o1kVT3wRgTHEl7eA/exec";
 
-  var userId = null;
+  function initStorageKeys() {
+    scopeId = FormUtils.getUserId();
+    STORAGE_KEY_INVOICES = "invoice_invoices:" + scopeId;
+    STORAGE_KEY_PROFILE = "invoice_profile:" + scopeId;
+    STORAGE_KEY_NEXT_SEQ = "invoice_next_seq:" + scopeId;
+    STORAGE_KEY_MIGRATED = "invoice_migrated:" + scopeId;
+  }
+
   var currentTaxRate = 10;
   var editingInvoiceId = null;
   var currentInvoice = null;
   var cachedProfile = null;
   var itemCounter = 0;
 
+  // === localStorage ヘルパー ===
+  // TODO: Step 3 で Web Crypto API AES-256 暗号化を追加し、平文保存を解消する
+  function getInvoicesFromStorage() {
+    try {
+      var data = localStorage.getItem(STORAGE_KEY_INVOICES);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveInvoicesToStorage(invoices) {
+    localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(invoices));
+  }
+
+  function getProfileFromStorage() {
+    try {
+      var data = localStorage.getItem(STORAGE_KEY_PROFILE);
+      return data ? JSON.parse(data) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveProfileToStorage(profile) {
+    localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
+  }
+
+  function generateInvoiceNumber() {
+    var now = new Date();
+    var y = now.getFullYear();
+    var m = ("0" + (now.getMonth() + 1)).slice(-2);
+    var prefix = "INV-" + y + m + "-";
+    var seqKey = STORAGE_KEY_NEXT_SEQ + ":" + y + m;
+
+    var seq = Number(localStorage.getItem(seqKey)) || 0;
+
+    // 未初期化 or 月替わり → 既存データから最大値を再計算
+    if (seq === 0) {
+      seq = recalcSeqFromStorage(prefix);
+    }
+
+    var number = prefix + ("000" + seq).slice(-3);
+    localStorage.setItem(seqKey, String(seq + 1));
+    return number;
+  }
+
+  function recalcSeqFromStorage(prefix) {
+    var invoices = getInvoicesFromStorage();
+    var maxSeq = 0;
+    for (var i = 0; i < invoices.length; i++) {
+      var num = invoices[i].invoiceNumber || "";
+      if (num.indexOf(prefix) === 0) {
+        var tail = Number(num.replace(prefix, ""));
+        if (tail > maxSeq) maxSeq = tail;
+      }
+    }
+    return maxSeq + 1;
+  }
+
+  function generateId() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  }
+
   // === 初期化 ===
   function init() {
-    // URLパラメータでuserIdを指定可能（テスト用）
-    var urlParams = new URLSearchParams(window.location.search);
-    userId = urlParams.get("userId") || FormUtils.getUserId();
-    loadInvoices();
-    loadProfile();
+    initStorageKeys();
+    migrateFromGas().then(function () {
+      loadInvoices();
+      loadProfile();
+    });
+  }
+
+  // === GASからの一回限り移行 ===
+  function migrateFromGas() {
+    if (localStorage.getItem(STORAGE_KEY_MIGRATED)) {
+      return Promise.resolve();
+    }
+    var hasFailed = false;
+    var expectedCount = 0;
+    // GASから既存データをインポート（ローカルデータとマージ）
+    return fetch(GAS_URL + "?action=list&userId=" + encodeURIComponent(scopeId))
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) {
+          hasFailed = true;
+          return [];
+        }
+        if (res.invoices && res.invoices.length > 0) {
+          expectedCount = res.invoices.length;
+          var promises = res.invoices.map(function (inv) {
+            return fetch(GAS_URL + "?action=get&userId=" + encodeURIComponent(scopeId) + "&id=" + encodeURIComponent(inv.id))
+              .then(function (r) { return r.json(); })
+              .then(function (detail) {
+                if (detail.ok && detail.invoice) return detail.invoice;
+                return null;
+              })
+              .catch(function () { return null; });
+          });
+          return Promise.all(promises);
+        }
+        return [];
+      })
+      .then(function (gasInvoices) {
+        var valid = gasInvoices.filter(function (i) { return i !== null; });
+        // 1件でも取得失敗があれば次回再試行
+        if (expectedCount > 0 && valid.length < expectedCount) {
+          hasFailed = true;
+        }
+        if (valid.length > 0) {
+          var now = new Date().toISOString();
+          for (var i = 0; i < valid.length; i++) {
+            if (!valid[i].createdAt) valid[i].createdAt = now;
+            if (!valid[i].updatedAt) valid[i].updatedAt = now;
+            if (!valid[i].status) valid[i].status = "draft";
+          }
+          // ローカル既存データとマージ（IDが重複しないもののみ追加）
+          var existing = getInvoicesFromStorage();
+          var existingIds = {};
+          for (var e = 0; e < existing.length; e++) {
+            existingIds[existing[e].id] = true;
+          }
+          for (var v = 0; v < valid.length; v++) {
+            if (!existingIds[valid[v].id]) {
+              existing.push(valid[v]);
+            }
+          }
+          saveInvoicesToStorage(existing);
+          // 移行データから月別採番シーケンスを初期化
+          var now2 = new Date();
+          var ym = now2.getFullYear() + ("0" + (now2.getMonth() + 1)).slice(-2);
+          var prefix = "INV-" + ym + "-";
+          var maxSeq = 0;
+          for (var j = 0; j < existing.length; j++) {
+            var num = existing[j].invoiceNumber || "";
+            if (num.indexOf(prefix) === 0) {
+              var tail = Number(num.replace(prefix, ""));
+              if (tail > maxSeq) maxSeq = tail;
+            }
+          }
+          if (maxSeq > 0) {
+            localStorage.setItem(STORAGE_KEY_NEXT_SEQ + ":" + ym, String(maxSeq + 1));
+          }
+        }
+        return fetch(GAS_URL + "?action=profile&userId=" + encodeURIComponent(scopeId));
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok && res.profile) {
+          if (!getProfileFromStorage()) {
+            saveProfileToStorage(res.profile);
+          }
+        } else {
+          hasFailed = true;
+        }
+        // 全取得成功時のみ移行完了フラグを立てる
+        if (!hasFailed) {
+          localStorage.setItem(STORAGE_KEY_MIGRATED, "1");
+        }
+      })
+      .catch(function () {
+        // GAS接続失敗 → 移行スキップ（次回再試行）
+      });
   }
 
   function setDefaultDates() {
@@ -320,85 +491,58 @@ var InvoiceApp = (function () {
   }
 
   function saveAsDraft() {
-    if (!GAS_URL) {
-      FormUtils.showToast("GAS URLが未設定です");
-      return;
-    }
-    showSpinner();
     var data = buildInvoiceData();
     data.status = "draft";
+    saveInvoiceToLocal(data);
+    FormUtils.showToast("下書き保存しました");
+    backToMain();
+  }
 
-    gasPostJson({ action: "save", userId: userId, invoice: data })
-      .then(function (res) {
-        hideSpinner();
-        if (res.ok) {
-          FormUtils.showToast("下書き保存しました");
-          backToMain();
-        } else {
-          FormUtils.showToast("エラー: " + (res.error || "保存失敗"));
+  function saveInvoiceToLocal(data) {
+    var invoices = getInvoicesFromStorage();
+    var now = new Date().toISOString();
+
+    if (data.id) {
+      // 既存の更新
+      for (var i = 0; i < invoices.length; i++) {
+        if (invoices[i].id === data.id) {
+          data.invoiceNumber = invoices[i].invoiceNumber;
+          data.updatedAt = now;
+          data.createdAt = invoices[i].createdAt;
+          invoices[i] = data;
+          saveInvoicesToStorage(invoices);
+          return data;
         }
-      })
-      .catch(function () {
-        hideSpinner();
-        FormUtils.showToast("通信エラー");
-      });
+      }
+    }
+
+    // 新規作成
+    data.id = generateId();
+    data.invoiceNumber = generateInvoiceNumber();
+    data.createdAt = now;
+    data.updatedAt = now;
+    invoices.push(data);
+    saveInvoicesToStorage(invoices);
+    editingInvoiceId = data.id;
+    return data;
   }
 
   function saveAndGenerate() {
-    if (!GAS_URL) {
-      FormUtils.showToast("GAS URLが未設定です");
-      return;
-    }
-    showSpinner();
     var data = buildInvoiceData();
     data.status = "draft";
-
-    gasPostJson({ action: "save", userId: userId, invoice: data })
-      .then(function (res) {
-        if (res.ok) {
-          // PDF生成
-          return gasPostJson({ action: "generatePdf", userId: userId, id: res.id });
-        } else {
-          throw new Error(res.error || "保存失敗");
-        }
-      })
-      .then(function (res) {
-        hideSpinner();
-        if (res.ok) {
-          FormUtils.showToast("PDF作成完了");
-          window.open(res.pdfUrl, "_blank");
-          backToMain();
-        } else {
-          FormUtils.showToast("PDF作成エラー: " + (res.error || ""));
-          backToMain();
-        }
-      })
-      .catch(function (err) {
-        hideSpinner();
-        FormUtils.showToast("エラー: " + err.message);
-      });
+    var saved = saveInvoiceToLocal(data);
+    currentInvoice = saved;
+    generatePdfFromData(saved);
   }
 
   // === 一覧読み込み ===
   function loadInvoices() {
-    if (!GAS_URL) {
-      document.getElementById("invoice-list").innerHTML =
-        '<div class="empty-state"><div class="empty-state-icon">📄</div>' +
-        '<div class="empty-state-text">GAS URLが未設定です</div></div>';
-      return;
-    }
-
-    FormUtils.gasGet(GAS_URL, { action: "list", userId: userId })
-      .then(function (res) {
-        if (res.ok) {
-          renderInvoiceList(res.invoices);
-        }
-      })
-      .catch(function () {
-        document.getElementById("invoice-list").innerHTML =
-          '<div class="empty-state"><div class="empty-state-icon">⚠️</div>' +
-          '<div class="empty-state-text">読み込みエラー</div></div>';
-      });
+    var invoices = getInvoicesFromStorage();
+    // 発行日降順
+    invoices.sort(function (a, b) {
+      return (b.issueDate || "").localeCompare(a.issueDate || "");
+    });
+    renderInvoiceList(invoices);
   }
 
   function renderInvoiceList(invoices) {
@@ -433,24 +577,16 @@ var InvoiceApp = (function () {
 
   // === 詳細表示 ===
   function showDetail(id) {
-    if (!GAS_URL) return;
-    showSpinner();
-
-    FormUtils.gasGet(GAS_URL, { action: "get", userId: userId, id: id })
-      .then(function (res) {
-        hideSpinner();
-        if (res.ok) {
-          currentInvoice = res.invoice;
-          renderDetail(res.invoice);
-          FormUtils.showScreen("detail-screen");
-        } else {
-          FormUtils.showToast("取得エラー");
-        }
-      })
-      .catch(function () {
-        hideSpinner();
-        FormUtils.showToast("通信エラー");
-      });
+    var invoices = getInvoicesFromStorage();
+    for (var i = 0; i < invoices.length; i++) {
+      if (invoices[i].id === id) {
+        currentInvoice = invoices[i];
+        renderDetail(invoices[i]);
+        FormUtils.showScreen("detail-screen");
+        return;
+      }
+    }
+    FormUtils.showToast("請求書が見つかりません");
   }
 
   function renderDetail(inv) {
@@ -514,45 +650,117 @@ var InvoiceApp = (function () {
     if (!currentInvoice) return;
     var nextStatus = currentInvoice.status === "draft" ? "sent" : currentInvoice.status === "sent" ? "paid" : "draft";
 
-    showSpinner();
-    gasPostJson({ action: "updateStatus", userId: userId, id: currentInvoice.id, status: nextStatus })
-      .then(function (res) {
-        hideSpinner();
-        if (res.ok) {
-          currentInvoice.status = nextStatus;
-          renderDetail(currentInvoice);
-          FormUtils.showToast("ステータスを更新しました");
-        } else {
-          FormUtils.showToast("エラー: " + (res.error || ""));
-        }
-      })
-      .catch(function () {
-        hideSpinner();
-        FormUtils.showToast("通信エラー");
-      });
+    var invoices = getInvoicesFromStorage();
+    for (var i = 0; i < invoices.length; i++) {
+      if (invoices[i].id === currentInvoice.id) {
+        invoices[i].status = nextStatus;
+        invoices[i].updatedAt = new Date().toISOString();
+        saveInvoicesToStorage(invoices);
+        currentInvoice = invoices[i];
+        renderDetail(currentInvoice);
+        FormUtils.showToast("ステータスを更新しました");
+        return;
+      }
+    }
+    FormUtils.showToast("請求書が見つかりません");
   }
 
-  // === PDF生成 ===
+  // === PDF生成（html2pdf.js） ===
   function generatePdf() {
     if (!currentInvoice) return;
-    showSpinner();
+    generatePdfFromData(currentInvoice);
+  }
 
-    gasPostJson({ action: "generatePdf", userId: userId, id: currentInvoice.id })
-      .then(function (res) {
-        hideSpinner();
-        if (res.ok) {
-          FormUtils.showToast("PDF作成完了");
-          var linkArea = document.getElementById("pdf-link-area");
-          linkArea.classList.remove("hidden");
-          document.getElementById("pdf-download-link").href = res.pdfUrl;
-        } else {
-          FormUtils.showToast("PDF作成エラー: " + (res.error || ""));
-        }
-      })
-      .catch(function () {
-        hideSpinner();
-        FormUtils.showToast("通信エラー");
-      });
+  function generatePdfFromData(inv) {
+    showSpinner();
+    var profile = cachedProfile || {};
+    var items = inv.items || [];
+    var itemRows = "";
+    for (var i = 0; i < items.length; i++) {
+      itemRows +=
+        "<tr><td>" + escapeHtml(items[i].deliveryDate || "") + "</td>" +
+        "<td>" + escapeHtml(items[i].name) + "</td>" +
+        "<td style='text-align:center;'>" + items[i].quantity + " " + escapeHtml(items[i].unit || "") + "</td>" +
+        "<td style='text-align:right;'>¥" + Number(items[i].unitPrice).toLocaleString() + "</td>" +
+        "<td style='text-align:right;'>¥" + Number(items[i].amount).toLocaleString() + "</td></tr>";
+    }
+
+    var addrParts = [];
+    if (inv.clientZip) addrParts.push("〒" + inv.clientZip);
+    if (inv.clientAddress) addrParts.push(inv.clientAddress);
+    if (inv.clientBuilding) addrParts.push(inv.clientBuilding);
+
+    var taxLabel = inv.taxRate === 0
+      ? "なし（非課税）"
+      : "¥" + Number(inv.taxAmount).toLocaleString() + "（" + inv.taxRate + "%）";
+
+    var html =
+      '<div style="font-family:sans-serif;padding:20px;max-width:700px;margin:0 auto;">' +
+        '<h1 style="text-align:center;font-size:22px;margin-bottom:24px;">請求書</h1>' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:16px;">' +
+          '<div>' +
+            '<div style="font-size:16px;font-weight:bold;margin-bottom:4px;">' + escapeHtml(inv.clientName) + ' 御中</div>' +
+            (addrParts.length > 0 ? '<div style="font-size:12px;color:#666;">' + escapeHtml(addrParts.join(" ")) + '</div>' : '') +
+            (inv.clientPerson ? '<div style="font-size:12px;color:#666;">' + escapeHtml(inv.clientPerson) + '</div>' : '') +
+          '</div>' +
+          '<div style="text-align:right;font-size:12px;">' +
+            '<div>請求番号: ' + escapeHtml(inv.invoiceNumber) + '</div>' +
+            '<div>請求日: ' + escapeHtml(inv.issueDate) + '</div>' +
+            '<div>お支払期限: ' + escapeHtml(inv.dueDate) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="background:#FFF8F0;border-radius:8px;padding:12px;text-align:center;margin-bottom:16px;">' +
+          '<div style="font-size:11px;color:#888;">ご請求金額</div>' +
+          '<div style="font-size:22px;font-weight:bold;">¥' + Number(inv.total).toLocaleString() + '</div>' +
+        '</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;">' +
+          '<thead><tr style="background:#F57C00;color:#fff;">' +
+            '<th style="padding:6px 8px;text-align:left;">納品日</th>' +
+            '<th style="padding:6px 8px;text-align:left;">品目</th>' +
+            '<th style="padding:6px 8px;text-align:center;">数量</th>' +
+            '<th style="padding:6px 8px;text-align:right;">単価</th>' +
+            '<th style="padding:6px 8px;text-align:right;">金額</th>' +
+          '</tr></thead>' +
+          '<tbody>' + itemRows + '</tbody>' +
+        '</table>' +
+        '<div style="text-align:right;font-size:13px;margin-bottom:16px;">' +
+          '<div>小計: ¥' + Number(inv.subtotal).toLocaleString() + '</div>' +
+          '<div>消費税額合計: ' + taxLabel + '</div>' +
+          '<div style="font-size:16px;font-weight:bold;border-top:2px solid #F57C00;padding-top:4px;margin-top:4px;">合計: ¥' + Number(inv.total).toLocaleString() + '</div>' +
+        '</div>' +
+        (profile.bankInfo ? '<div style="border-top:1px solid #ddd;padding-top:8px;margin-bottom:8px;"><div style="font-size:11px;font-weight:bold;color:#888;">振込先</div><div style="font-size:12px;">' + escapeHtml(profile.bankInfo) + '</div></div>' : '') +
+        (inv.notes ? '<div style="border-top:1px solid #ddd;padding-top:8px;"><div style="font-size:11px;font-weight:bold;color:#888;">備考</div><div style="font-size:12px;">' + escapeHtml(inv.notes) + '</div></div>' : '') +
+        (profile.businessName ? '<div style="border-top:1px solid #ddd;padding-top:8px;margin-top:12px;font-size:12px;">' +
+          '<div style="font-weight:bold;">' + escapeHtml(profile.businessName) + '</div>' +
+          (profile.businessAddress ? '<div>' + escapeHtml(profile.businessAddress) + '</div>' : '') +
+          (profile.phone ? '<div>TEL: ' + escapeHtml(profile.phone) + '</div>' : '') +
+          (profile.email ? '<div>Email: ' + escapeHtml(profile.email) + '</div>' : '') +
+          (profile.registrationNumber ? '<div>登録番号: ' + escapeHtml(profile.registrationNumber) + '</div>' : '') +
+        '</div>' : '') +
+      '</div>';
+
+    var container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+
+    var fileName = (inv.invoiceNumber || "invoice") + ".pdf";
+
+    html2pdf().set({
+      margin: 10,
+      filename: fileName,
+      image: { type: "jpeg", quality: 0.95 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
+    }).from(container).save().then(function () {
+      document.body.removeChild(container);
+      hideSpinner();
+      FormUtils.showToast("PDFをダウンロードしました");
+      backToMain();
+    }).catch(function () {
+      document.body.removeChild(container);
+      hideSpinner();
+      FormUtils.showToast("PDF作成エラー");
+    });
   }
 
   // === 編集 ===
@@ -616,54 +824,38 @@ var InvoiceApp = (function () {
     if (!currentInvoice) return;
     if (!confirm("この請求書を削除しますか？")) return;
 
-    showSpinner();
-    gasPostJson({ action: "delete", userId: userId, id: currentInvoice.id })
-      .then(function (res) {
-        hideSpinner();
-        if (res.ok) {
-          FormUtils.showToast("削除しました");
-          backToMain();
-        } else {
-          FormUtils.showToast("エラー: " + (res.error || ""));
-        }
-      })
-      .catch(function () {
-        hideSpinner();
-        FormUtils.showToast("通信エラー");
-      });
+    var invoices = getInvoicesFromStorage();
+    invoices = invoices.filter(function (inv) {
+      return inv.id !== currentInvoice.id;
+    });
+    saveInvoicesToStorage(invoices);
+    FormUtils.showToast("削除しました");
+    backToMain();
   }
 
   // === プロフィール ===
   function loadProfile() {
-    if (!GAS_URL) return;
-    FormUtils.gasGet(GAS_URL, { action: "profile", userId: userId })
-      .then(function (res) {
-        if (res.ok && res.profile) {
-          cachedProfile = res.profile;
-          document.getElementById("prof-name").value = res.profile.businessName || "";
-          // 住所: "〒XXX-XXXX 住所" 形式から分離
-          var addr = res.profile.businessAddress || "";
-          var zipMatch = addr.match(/^〒?(\d{3}-?\d{4})\s*/);
-          if (zipMatch) {
-            document.getElementById("prof-zip").value = zipMatch[1];
-            document.getElementById("prof-address").value = addr.replace(/^〒?\d{3}-?\d{4}\s*/, "");
-          } else {
-            document.getElementById("prof-address").value = addr;
-          }
-          document.getElementById("prof-phone").value = res.profile.phone || "";
-          setEmailFromFull(res.profile.email || "");
-          setBankInfoFromFull(res.profile.bankInfo || "");
-          document.getElementById("prof-reg").value = res.profile.registrationNumber || "";
-        }
-      })
-      .catch(function () {});
+    var profile = getProfileFromStorage();
+    if (profile) {
+      cachedProfile = profile;
+      document.getElementById("prof-name").value = profile.businessName || "";
+      // 住所: "〒XXX-XXXX 住所" 形式から分離
+      var addr = profile.businessAddress || "";
+      var zipMatch = addr.match(/^〒?(\d{3}-?\d{4})\s*/);
+      if (zipMatch) {
+        document.getElementById("prof-zip").value = zipMatch[1];
+        document.getElementById("prof-address").value = addr.replace(/^〒?\d{3}-?\d{4}\s*/, "");
+      } else {
+        document.getElementById("prof-address").value = addr;
+      }
+      document.getElementById("prof-phone").value = profile.phone || "";
+      setEmailFromFull(profile.email || "");
+      setBankInfoFromFull(profile.bankInfo || "");
+      document.getElementById("prof-reg").value = profile.registrationNumber || "";
+    }
   }
 
   function saveProfile() {
-    if (!GAS_URL) {
-      FormUtils.showToast("GAS URLが未設定です");
-      return;
-    }
     var zip = document.getElementById("prof-zip").value.trim();
     var address = document.getElementById("prof-address").value.trim();
     var fullAddress = zip ? "〒" + zip + " " + address : address;
@@ -677,22 +869,10 @@ var InvoiceApp = (function () {
       registrationNumber: document.getElementById("prof-reg").value.trim()
     };
 
-    showSpinner();
-    gasPostJson({ action: "saveProfile", userId: userId, profile: profile })
-      .then(function (res) {
-        hideSpinner();
-        if (res.ok) {
-          cachedProfile = profile;
-          FormUtils.showToast("保存しました");
-          backToMain();
-        } else {
-          FormUtils.showToast("エラー: " + (res.error || ""));
-        }
-      })
-      .catch(function () {
-        hideSpinner();
-        FormUtils.showToast("通信エラー");
-      });
+    saveProfileToStorage(profile);
+    cachedProfile = profile;
+    FormUtils.showToast("保存しました");
+    backToMain();
   }
 
   // === 請求先 郵便番号検索 ===
@@ -994,19 +1174,6 @@ var InvoiceApp = (function () {
   }
 
   // === ユーティリティ ===
-  function gasPostJson(data) {
-    return fetch(GAS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify(data)
-    })
-    .then(function (r) { return r.text(); })
-    .then(function (text) {
-      try { return JSON.parse(text); }
-      catch (e) { return { ok: false, error: "レスポンス解析エラー" }; }
-    });
-  }
-
   function showSpinner() {
     document.getElementById("spinner").classList.remove("hidden");
   }

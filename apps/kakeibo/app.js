@@ -15,7 +15,8 @@ var KakeiboApp = (function () {
   var dbReady = false;
   var pendingImageBase64 = null; // OCR時のレシート画像を一時保持
   var businessMode = false; // 事業用モード（クラウド同期ON）
-  var backupEmail = null; // 個人用モード: バックアップ用メアド（ハッシュ化して使用）
+  var backupEmail = null; // 個人用モード: バックアップ用メアド
+  var backupPin = null; // 個人用モード: バックアップ用4桁PIN
 
   var CATEGORIES = [
     "食費", "日用品", "交通費", "住居費", "水道光熱費", "通信費",
@@ -56,6 +57,9 @@ var KakeiboApp = (function () {
       businessMode = (mode === "business");
       return KakeiboDB.getSetting("backupEmail").then(function (email) {
         backupEmail = email || null;
+        return KakeiboDB.getSetting("backupPin");
+      }).then(function (pin) {
+        backupPin = pin || null;
         updateModeDisplay();
         loadTodayTotal();
         loadHistory();
@@ -1097,14 +1101,25 @@ var KakeiboApp = (function () {
   function selectMode(mode) {
     businessMode = (mode === "business");
 
-    // 個人用モードの場合、メアドを取得
+    // 個人用モードの場合、メアド+PINを取得
     var emailInput = document.getElementById("mode-email");
+    var pinInput = document.getElementById("mode-pin");
     var email = emailInput ? emailInput.value.trim() : "";
+    var pin = pinInput ? pinInput.value.trim() : "";
+
+    // PINバリデーション
+    if (email && (!pin || pin.length !== 4 || isNaN(Number(pin)))) {
+      FormUtils.showToast("PINは4桁の数字で入力してください");
+      return;
+    }
 
     KakeiboDB.setSetting("mode", mode).then(function () {
-      if (email) {
+      if (email && pin) {
         backupEmail = email;
-        return KakeiboDB.setSetting("backupEmail", email);
+        backupPin = pin;
+        return KakeiboDB.setSetting("backupEmail", email).then(function () {
+          return KakeiboDB.setSetting("backupPin", pin);
+        });
       }
       return Promise.resolve();
     }).then(function () {
@@ -1114,8 +1129,9 @@ var KakeiboApp = (function () {
       loadHistory();
       if (businessMode) {
         FormUtils.showToast("事業用モード: クラウド同期ON");
-      } else if (backupEmail) {
+      } else if (backupEmail && backupPin) {
         FormUtils.showToast("個人用モード: 自動バックアップON");
+        return autoBackup();
       } else {
         FormUtils.showToast("個人用モード: ローカル保存のみ");
       }
@@ -1138,11 +1154,11 @@ var KakeiboApp = (function () {
     if (display) {
       if (businessMode) {
         display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#E8F5E9;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">☁️</span><div><div style="font-size:13px;font-weight:700;color:#2E7D32">事業用モード</div><div style="font-size:11px;color:#666">クラウド同期ON・電子帳簿保存法対応</div></div></div>';
-      } else if (backupEmail) {
+      } else if (backupEmail && backupPin) {
         var masked = backupEmail.replace(/^(.{2})(.*)(@.*)$/, function (m, a, b, c) {
           return a + b.replace(/./g, "*") + c;
         });
-        display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#E3F2FD;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">🔒</span><div><div style="font-size:13px;font-weight:700;color:#1565C0">個人用モード（バックアップON）</div><div style="font-size:11px;color:#666">' + escapeHtml(masked) + ' で自動バックアップ</div></div></div>';
+        display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#E3F2FD;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">🔒</span><div><div style="font-size:13px;font-weight:700;color:#1565C0">個人用モード（バックアップON）</div><div style="font-size:11px;color:#666">' + escapeHtml(masked) + ' + PIN で自動バックアップ</div></div></div>';
       } else {
         display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#FFF3E0;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">⚠️</span><div><div style="font-size:13px;font-weight:700;color:#E65100">個人用モード（バックアップなし）</div><div style="font-size:11px;color:#666">キャッシュクリアでデータが消失する可能性があります</div></div></div>';
       }
@@ -1169,7 +1185,7 @@ var KakeiboApp = (function () {
         badge.textContent = "☁️ 事業用";
         badge.style.display = "inline-block";
         badge.classList.remove("hidden");
-      } else if (backupEmail) {
+      } else if (backupEmail && backupPin) {
         badge.textContent = "🔒 バックアップON";
         badge.style.display = "inline-block";
         badge.classList.remove("hidden");
@@ -1179,18 +1195,23 @@ var KakeiboApp = (function () {
     }
   }
 
-  // === 個人用モード: 匿名自動バックアップ ===
+  // === 個人用モード: メアド+PINで匿名自動バックアップ ===
   function autoBackup() {
-    if (businessMode || !backupEmail) return Promise.resolve();
+    if (businessMode || !backupEmail || !backupPin) return Promise.resolve();
 
     return KakeiboDB.exportAll(false).then(function (data) {
-      return sha256(backupEmail).then(function (hashedEmail) {
+      // lookupKey = SHA-256(email + pin), emailHash = SHA-256(email)
+      return Promise.all([
+        sha256(backupEmail + backupPin),
+        sha256(backupEmail)
+      ]).then(function (hashes) {
         return fetch(GAS_URL, {
           method: "POST",
           headers: { "Content-Type": "text/plain" },
           body: JSON.stringify({
             action: "kakeibo_backup",
-            hashedEmail: hashedEmail,
+            lookupKey: hashes[0],
+            emailHash: hashes[1],
             data: data
           })
         });
@@ -1209,13 +1230,25 @@ var KakeiboApp = (function () {
   }
 
   function restoreFromEmail() {
-    var email = prompt("バックアップに使用したメールアドレスを入力してください");
-    if (!email || !email.trim()) return;
-    email = email.trim();
+    // 復元画面を表示
+    FormUtils.showScreen("restore-screen");
+  }
+
+  function executeRestore() {
+    var email = document.getElementById("restore-email").value.trim();
+    var pin = document.getElementById("restore-pin").value.trim();
+    if (!email) {
+      FormUtils.showToast("メールアドレスを入力してください");
+      return;
+    }
+    if (!pin || pin.length !== 4 || isNaN(Number(pin))) {
+      FormUtils.showToast("PINは4桁の数字で入力してください");
+      return;
+    }
 
     showSpinner("バックアップを復元中...");
-    sha256(email).then(function (hashedEmail) {
-      return fetch(GAS_URL + "?action=kakeibo_restore&hashedEmail=" + encodeURIComponent(hashedEmail));
+    sha256(email + pin).then(function (lookupKey) {
+      return fetch(GAS_URL + "?action=kakeibo_restore&lookupKey=" + encodeURIComponent(lookupKey));
     }).then(function (r) { return r.text(); })
     .then(function (text) {
       var res = JSON.parse(text);
@@ -1225,13 +1258,18 @@ var KakeiboApp = (function () {
         return;
       }
       return KakeiboDB.importAll(res.data).then(function () {
-        // メアドも保存
         backupEmail = email;
+        backupPin = pin;
         return KakeiboDB.setSetting("backupEmail", email);
+      }).then(function () {
+        return KakeiboDB.setSetting("backupPin", pin);
+      }).then(function () {
+        return KakeiboDB.setSetting("mode", "personal");
       }).then(function () {
         hideSpinner();
         FormUtils.showToast("復元しました（" + res.updatedAt + " のバックアップ）");
         updateModeDisplay();
+        FormUtils.showScreen("main-screen");
         loadHistory();
         loadTodayTotal();
       });
@@ -1242,25 +1280,147 @@ var KakeiboApp = (function () {
     });
   }
 
-  function setBackupEmail() {
-    var msg = backupEmail
-      ? "現在のメールアドレス: " + backupEmail + "\n新しいメールアドレスを入力（空欄でバックアップ解除）"
-      : "バックアップ用メールアドレスを入力";
-    var email = prompt(msg);
-    if (email === null) return; // キャンセル
+  // === PINリセット ===
+  function showPinReset() {
+    FormUtils.showScreen("pin-reset-screen");
+    document.getElementById("pin-reset-step1").classList.remove("hidden");
+    document.getElementById("pin-reset-step2").classList.add("hidden");
+  }
 
-    email = email.trim();
-    backupEmail = email || null;
-    KakeiboDB.setSetting("backupEmail", email || "").then(function () {
-      updateModeDisplay();
-      if (email) {
-        FormUtils.showToast("バックアップ用メアドを設定しました");
-        return autoBackup();
-      } else {
-        FormUtils.showToast("バックアップを解除しました");
+  function requestPinReset() {
+    var email = document.getElementById("pin-reset-email").value.trim();
+    if (!email) {
+      FormUtils.showToast("メールアドレスを入力してください");
+      return;
+    }
+    showSpinner("リセットコードを送信中...");
+    fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({
+        action: "kakeibo_request_pin_reset",
+        email: email
+      })
+    }).then(function (r) { return r.text(); })
+    .then(function (text) {
+      hideSpinner();
+      var res = JSON.parse(text);
+      if (!res.ok) {
+        FormUtils.showToast(res.error || "リセットコードの送信に失敗しました");
+        return;
       }
+      FormUtils.showToast("リセットコードをメールに送信しました");
+      document.getElementById("pin-reset-step1").classList.add("hidden");
+      document.getElementById("pin-reset-step2").classList.remove("hidden");
     }).catch(function (err) {
-      console.error("メアド設定エラー:", err);
+      hideSpinner();
+      console.error("PINリセットリクエストエラー:", err);
+      FormUtils.showToast("送信に失敗しました");
+    });
+  }
+
+  function executePinReset() {
+    var email = document.getElementById("pin-reset-email").value.trim();
+    var code = document.getElementById("pin-reset-code").value.trim();
+    var newPin = document.getElementById("pin-reset-new-pin").value.trim();
+
+    if (!code) {
+      FormUtils.showToast("リセットコードを入力してください");
+      return;
+    }
+    if (!newPin || newPin.length !== 4 || isNaN(Number(newPin))) {
+      FormUtils.showToast("新しいPINは4桁の数字で入力してください");
+      return;
+    }
+
+    showSpinner("PINをリセット中...");
+    fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({
+        action: "kakeibo_reset_pin",
+        email: email,
+        code: code,
+        newPin: newPin
+      })
+    }).then(function (r) { return r.text(); })
+    .then(function (text) {
+      var res = JSON.parse(text);
+      if (!res.ok) {
+        hideSpinner();
+        FormUtils.showToast(res.error || "PINリセットに失敗しました");
+        return;
+      }
+      // 復元データがあればインポート
+      return KakeiboDB.importAll(res.data).then(function () {
+        backupEmail = email;
+        backupPin = newPin;
+        return KakeiboDB.setSetting("backupEmail", email);
+      }).then(function () {
+        return KakeiboDB.setSetting("backupPin", newPin);
+      }).then(function () {
+        return KakeiboDB.setSetting("mode", "personal");
+      }).then(function () {
+        hideSpinner();
+        FormUtils.showToast("PINをリセットし、データを復元しました");
+        updateModeDisplay();
+        FormUtils.showScreen("main-screen");
+        loadHistory();
+        loadTodayTotal();
+      });
+    }).catch(function (err) {
+      hideSpinner();
+      console.error("PINリセットエラー:", err);
+      FormUtils.showToast("PINリセットに失敗しました");
+    });
+  }
+
+  function setBackupEmail() {
+    // バックアップ設定画面を表示
+    FormUtils.showScreen("backup-setup-screen");
+    var emailInput = document.getElementById("backup-setup-email");
+    var pinInput = document.getElementById("backup-setup-pin");
+    if (emailInput && backupEmail) emailInput.value = backupEmail;
+    if (pinInput) pinInput.value = "";
+  }
+
+  function saveBackupSettings() {
+    var email = document.getElementById("backup-setup-email").value.trim();
+    var pin = document.getElementById("backup-setup-pin").value.trim();
+
+    if (!email) {
+      // バックアップ解除
+      backupEmail = null;
+      backupPin = null;
+      KakeiboDB.setSetting("backupEmail", "").then(function () {
+        return KakeiboDB.setSetting("backupPin", "");
+      }).then(function () {
+        updateModeDisplay();
+        FormUtils.showToast("バックアップを解除しました");
+        FormUtils.showScreen("main-screen");
+        switchTab("settings");
+      });
+      return;
+    }
+
+    if (!pin || pin.length !== 4 || isNaN(Number(pin))) {
+      FormUtils.showToast("PINは4桁の数字で入力してください");
+      return;
+    }
+
+    backupEmail = email;
+    backupPin = pin;
+    KakeiboDB.setSetting("backupEmail", email).then(function () {
+      return KakeiboDB.setSetting("backupPin", pin);
+    }).then(function () {
+      updateModeDisplay();
+      FormUtils.showToast("バックアップ設定を保存しました");
+      FormUtils.showScreen("main-screen");
+      switchTab("settings");
+      return autoBackup();
+    }).catch(function (err) {
+      console.error("バックアップ設定エラー:", err);
+      FormUtils.showToast("設定の保存に失敗しました");
     });
   }
 
@@ -1359,7 +1519,12 @@ var KakeiboApp = (function () {
     switchMode: switchMode,
     syncFromGas: syncFromGas,
     restoreFromEmail: restoreFromEmail,
-    setBackupEmail: setBackupEmail
+    executeRestore: executeRestore,
+    setBackupEmail: setBackupEmail,
+    saveBackupSettings: saveBackupSettings,
+    showPinReset: showPinReset,
+    requestPinReset: requestPinReset,
+    executePinReset: executePinReset
   };
 })();
 

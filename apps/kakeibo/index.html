@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>かんたん家計簿 - たまごツール</title>
-  <link rel="stylesheet" href="../../style.css?v=9">
+  <link rel="stylesheet" href="../../style.css?v=10">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#F5A623">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -440,8 +440,8 @@
         <div class="settings-section">
           <div class="settings-section-title">📋 動作モード</div>
           <div id="current-mode-display"></div>
-          <button class="settings-btn" id="btn-set-backup-email" style="display:none" onclick="KakeiboApp.setBackupEmail()">バックアップ用メアドを設定</button>
-          <button class="settings-btn" id="btn-restore-from-email" style="display:none" onclick="KakeiboApp.restoreFromEmail()">メアドでバックアップ復元</button>
+          <button class="settings-btn" id="btn-set-backup-email" style="display:none" onclick="KakeiboApp.setBackupEmail()">バックアップ設定（メアド+PIN）</button>
+          <button class="settings-btn" id="btn-restore-from-email" style="display:none" onclick="KakeiboApp.restoreFromEmail()">メアド+PINでバックアップ復元</button>
           <button class="settings-btn" id="btn-sync-from-gas" style="display:none" onclick="KakeiboApp.syncFromGas()">クラウドから同期</button>
           <button class="settings-btn" onclick="KakeiboApp.switchMode()">モードを切り替え</button>
         </div>
@@ -597,12 +597,14 @@
         <div style="background:#FFF8E1;border-radius:10px;padding:12px;margin-bottom:12px">
           <div style="font-size:12px;font-weight:700;color:#F57F17;margin-bottom:6px">メールアドレスで自動バックアップ（任意）</div>
           <div style="font-size:11px;color:var(--text-light);line-height:1.7;margin-bottom:8px">
-            メールアドレスを入力すると、データが自動でクラウドにバックアップされます。<br>
-            キャッシュクリアや端末変更時も、同じメアドで復元できます。<br>
-            <strong>メアドはハッシュ化（暗号化）され、サーバーには保存されません。</strong><br>
+            メールアドレスと4桁のPINを設定すると、データが自動でクラウドにバックアップされます。<br>
+            キャッシュクリアや端末変更時も、同じメアド+PINで復元できます。<br>
+            <strong>メアド・PINはハッシュ化（暗号化）され、サーバーには保存されません。</strong><br>
+            PINを忘れた場合は、メールでリセットできます。<br>
             未入力の場合、データはスマホ内のみに保存されます（消失リスクあり）。
           </div>
           <input type="email" id="mode-email" class="form-input" placeholder="例: example@gmail.com" style="padding:10px;font-size:14px;margin-bottom:8px">
+          <input type="tel" id="mode-pin" class="form-input" placeholder="4桁のPIN（数字）" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" style="padding:10px;font-size:14px;margin-bottom:8px">
         </div>
 
         <button class="btn btn-primary" style="width:100%" onclick="KakeiboApp.selectMode('personal')">個人用モードで始める</button>
@@ -632,22 +634,112 @@
     </div>
   </div>
 
-  <script src="../../shared/form-utils.js?v=9"></script>
-  <script src="db.js?v=9"></script>
-  <script src="chart.js?v=9"></script>
-  <script src="app.js?v=9"></script>
+  <!-- 復元画面 -->
+  <div id="restore-screen" data-screen class="hidden">
+    <div class="container" style="padding-top:32px">
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:48px;margin-bottom:12px">🔄</div>
+        <h1 style="font-size:20px;font-weight:800;color:var(--secondary)">バックアップ復元</h1>
+        <p style="font-size:13px;color:var(--text-light);margin-top:8px">登録時のメールアドレスとPINを入力</p>
+      </div>
+      <div class="settings-section">
+        <div class="form-group">
+          <label class="form-label">メールアドレス</label>
+          <input type="email" id="restore-email" class="form-input" placeholder="例: example@gmail.com" style="padding:10px;font-size:14px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">PIN（4桁）</label>
+          <input type="tel" id="restore-pin" class="form-input" placeholder="4桁のPIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" style="padding:10px;font-size:14px">
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="KakeiboApp.executeRestore()">復元する</button>
+        <div style="text-align:center;margin-top:16px">
+          <button style="background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline" onclick="KakeiboApp.showPinReset()">PINを忘れた方はこちら</button>
+        </div>
+        <div style="text-align:center;margin-top:8px">
+          <button style="background:none;border:none;color:var(--text-light);font-size:13px;cursor:pointer" onclick="FormUtils.showScreen('mode-select-screen')">戻る</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PINリセット画面 -->
+  <div id="pin-reset-screen" data-screen class="hidden">
+    <div class="container" style="padding-top:32px">
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:48px;margin-bottom:12px">🔑</div>
+        <h1 style="font-size:20px;font-weight:800;color:var(--secondary)">PINリセット</h1>
+      </div>
+      <!-- Step 1: メアド入力 → コード送信 -->
+      <div id="pin-reset-step1" class="settings-section">
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;line-height:1.7">登録時のメールアドレスにリセットコード（6桁）を送信します。</p>
+        <div class="form-group">
+          <label class="form-label">メールアドレス</label>
+          <input type="email" id="pin-reset-email" class="form-input" placeholder="例: example@gmail.com" style="padding:10px;font-size:14px">
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="KakeiboApp.requestPinReset()">リセットコードを送信</button>
+        <div style="text-align:center;margin-top:12px">
+          <button style="background:none;border:none;color:var(--text-light);font-size:13px;cursor:pointer" onclick="KakeiboApp.restoreFromEmail()">戻る</button>
+        </div>
+      </div>
+      <!-- Step 2: コード入力 + 新PIN設定 -->
+      <div id="pin-reset-step2" class="settings-section hidden">
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;line-height:1.7">メールに届いた6桁のリセットコードと、新しいPINを入力してください。<br>コードは10分間有効です。</p>
+        <div class="form-group">
+          <label class="form-label">リセットコード（6桁）</label>
+          <input type="tel" id="pin-reset-code" class="form-input" placeholder="123456" maxlength="6" inputmode="numeric" style="padding:10px;font-size:14px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">新しいPIN（4桁）</label>
+          <input type="tel" id="pin-reset-new-pin" class="form-input" placeholder="4桁のPIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" style="padding:10px;font-size:14px">
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="KakeiboApp.executePinReset()">PINをリセットして復元</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- バックアップ設定画面 -->
+  <div id="backup-setup-screen" data-screen class="hidden">
+    <div class="container" style="padding-top:32px">
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:48px;margin-bottom:12px">🔒</div>
+        <h1 style="font-size:20px;font-weight:800;color:var(--secondary)">バックアップ設定</h1>
+        <p style="font-size:13px;color:var(--text-light);margin-top:8px">メールアドレスとPINでデータを保護</p>
+      </div>
+      <div class="settings-section">
+        <div class="form-group">
+          <label class="form-label">メールアドレス</label>
+          <input type="email" id="backup-setup-email" class="form-input" placeholder="例: example@gmail.com" style="padding:10px;font-size:14px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">PIN（4桁）</label>
+          <input type="tel" id="backup-setup-pin" class="form-input" placeholder="4桁のPIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" style="padding:10px;font-size:14px">
+        </div>
+        <div style="font-size:11px;color:var(--text-light);line-height:1.7;margin-bottom:12px;padding:8px;background:#FFF8E1;border-radius:8px">
+          PINを忘れた場合は、メールアドレスでリセットできます。<br>
+          空欄で保存するとバックアップが解除されます。
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="KakeiboApp.saveBackupSettings()">保存</button>
+        <button class="btn btn-secondary" style="width:100%" onclick="FormUtils.showScreen('main-screen');KakeiboApp.switchTab('settings')">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../shared/form-utils.js?v=10"></script>
+  <script src="db.js?v=10"></script>
+  <script src="chart.js?v=10"></script>
+  <script src="app.js?v=10"></script>
 
   <!-- Service Worker 登録 -->
   <script>
     if ("serviceWorker" in navigator) {
       caches.keys().then(function(names) {
         names.forEach(function(name) {
-          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v9") {
+          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v10") {
             caches.delete(name);
           }
         });
       });
-      navigator.serviceWorker.register("sw.js?v=9").catch(function () {});
+      navigator.serviceWorker.register("sw.js?v=10").catch(function () {});
     }
   </script>
 </body>

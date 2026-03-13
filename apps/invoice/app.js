@@ -229,7 +229,9 @@ var InvoiceApp = (function () {
 
     document.getElementById("prev-total").textContent = "¥" + total.toLocaleString();
     document.getElementById("prev-subtotal").textContent = "¥" + subtotal.toLocaleString();
-    document.getElementById("prev-tax").textContent = "¥" + taxAmount.toLocaleString() + "（" + currentTaxRate + "%）";
+    document.getElementById("prev-tax").textContent = currentTaxRate === 0
+      ? "なし（非課税）"
+      : "¥" + taxAmount.toLocaleString() + "（" + currentTaxRate + "%）";
     document.getElementById("prev-total2").textContent = "¥" + total.toLocaleString();
 
     // 品目テーブル
@@ -471,7 +473,7 @@ var InvoiceApp = (function () {
       '<tbody>' + itemRows + '</tbody></table>' +
       '<div class="amount-summary">' +
         '<div class="amount-row"><span>小計</span><span>¥' + Number(inv.subtotal).toLocaleString() + '</span></div>' +
-        '<div class="amount-row"><span>消費税額合計（' + inv.taxRate + '%）</span><span>¥' + Number(inv.taxAmount).toLocaleString() + '</span></div>' +
+        '<div class="amount-row"><span>消費税額合計' + (inv.taxRate === 0 ? '（なし（非課税））' : '（' + inv.taxRate + '%）') + '</span><span>¥' + Number(inv.taxAmount).toLocaleString() + '</span></div>' +
         '<div class="amount-row total"><span>合計</span><span>¥' + Number(inv.total).toLocaleString() + '</span></div>' +
       '</div>' +
       (inv.notes ? '<div class="preview-section"><div class="preview-section-title">備考</div><div style="font-size:13px;">' + escapeHtml(inv.notes) + '</div></div>' : '');

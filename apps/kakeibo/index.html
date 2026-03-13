@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>かんたん家計簿 - たまごツール</title>
-  <link rel="stylesheet" href="../../style.css?v=8">
+  <link rel="stylesheet" href="../../style.css?v=9">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#F5A623">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -440,8 +440,10 @@
         <div class="settings-section">
           <div class="settings-section-title">📋 動作モード</div>
           <div id="current-mode-display"></div>
-          <button class="settings-btn" onclick="KakeiboApp.switchMode()">モードを切り替え</button>
+          <button class="settings-btn" id="btn-set-backup-email" style="display:none" onclick="KakeiboApp.setBackupEmail()">バックアップ用メアドを設定</button>
+          <button class="settings-btn" id="btn-restore-from-email" style="display:none" onclick="KakeiboApp.restoreFromEmail()">メアドでバックアップ復元</button>
           <button class="settings-btn" id="btn-sync-from-gas" style="display:none" onclick="KakeiboApp.syncFromGas()">クラウドから同期</button>
+          <button class="settings-btn" onclick="KakeiboApp.switchMode()">モードを切り替え</button>
         </div>
 
         <!-- データ管理 -->
@@ -572,61 +574,80 @@
 
   <!-- モード選択画面 -->
   <div id="mode-select-screen" data-screen class="hidden">
-    <div class="container" style="padding-top:40px">
-      <div style="text-align:center;margin-bottom:32px">
+    <div class="container" style="padding-top:32px">
+      <div style="text-align:center;margin-bottom:24px">
         <div style="font-size:48px;margin-bottom:12px">💰</div>
         <h1 style="font-size:22px;font-weight:800;color:var(--secondary)">かんたん家計簿</h1>
         <p style="font-size:13px;color:var(--text-light);margin-top:8px">使い方を選んでください</p>
-        <p style="font-size:11px;color:var(--text-light)">あとから設定で変更できます</p>
+        <p style="font-size:11px;color:var(--text-light)">あとから設定でいつでも変更できます</p>
       </div>
 
-      <div class="settings-section" style="cursor:pointer;transition:transform 0.1s" onclick="KakeiboApp.selectMode('personal')" ontouchstart="this.style.transform='scale(0.98)'" ontouchend="this.style.transform=''">
-        <div style="display:flex;align-items:flex-start;gap:16px">
+      <!-- 個人用モード -->
+      <div class="settings-section" style="border:2px solid var(--border)">
+        <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:12px">
           <div style="font-size:36px;flex-shrink:0">🔒</div>
           <div>
             <div style="font-size:16px;font-weight:700;color:var(--secondary);margin-bottom:4px">個人用モード</div>
-            <div style="font-size:12px;color:var(--text-light);line-height:1.6">
-              データは<strong>スマホ内のみ</strong>に保存<br>
-              プライバシー重視・通信なし<br>
-              家庭の家計管理向け
+            <div style="font-size:12px;color:var(--text-light);line-height:1.7">
+              家庭の家計管理向け。データはスマホ内に保存されます。
             </div>
           </div>
         </div>
+
+        <div style="background:#FFF8E1;border-radius:10px;padding:12px;margin-bottom:12px">
+          <div style="font-size:12px;font-weight:700;color:#F57F17;margin-bottom:6px">メールアドレスで自動バックアップ（任意）</div>
+          <div style="font-size:11px;color:var(--text-light);line-height:1.7;margin-bottom:8px">
+            メールアドレスを入力すると、データが自動でクラウドにバックアップされます。<br>
+            キャッシュクリアや端末変更時も、同じメアドで復元できます。<br>
+            <strong>メアドはハッシュ化（暗号化）され、サーバーには保存されません。</strong><br>
+            未入力の場合、データはスマホ内のみに保存されます（消失リスクあり）。
+          </div>
+          <input type="email" id="mode-email" class="form-input" placeholder="例: example@gmail.com" style="padding:10px;font-size:14px;margin-bottom:8px">
+        </div>
+
+        <button class="btn btn-primary" style="width:100%" onclick="KakeiboApp.selectMode('personal')">個人用モードで始める</button>
       </div>
 
-      <div class="settings-section" style="cursor:pointer;transition:transform 0.1s" onclick="KakeiboApp.selectMode('business')" ontouchstart="this.style.transform='scale(0.98)'" ontouchend="this.style.transform=''">
-        <div style="display:flex;align-items:flex-start;gap:16px">
+      <!-- 事業用モード -->
+      <div class="settings-section" style="border:2px solid var(--border)">
+        <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:12px">
           <div style="font-size:36px;flex-shrink:0">☁️</div>
           <div>
             <div style="font-size:16px;font-weight:700;color:var(--secondary);margin-bottom:4px">事業用モード</div>
-            <div style="font-size:12px;color:var(--text-light);line-height:1.6">
-              データを<strong>クラウドに自動同期</strong><br>
-              電子帳簿保存法対応<br>
-              レシート画像・変更履歴をサーバー保存<br>
-              個人事業主・確定申告向け
+            <div style="font-size:12px;color:var(--text-light);line-height:1.7">
+              個人事業主・確定申告向け。<br>
+              全データが<strong>クラウドにリアルタイム同期</strong>されます。<br>
+              レシート画像・変更履歴もサーバー保存。<br>
+              <strong>電子帳簿保存法に対応</strong>しています。
             </div>
           </div>
         </div>
+        <button class="btn btn-outline" style="width:100%" onclick="KakeiboApp.selectMode('business')">事業用モードで始める</button>
+      </div>
+
+      <!-- 復元 -->
+      <div style="text-align:center;margin-top:16px">
+        <button style="background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline" onclick="KakeiboApp.restoreFromEmail()">以前のバックアップから復元</button>
       </div>
     </div>
   </div>
 
-  <script src="../../shared/form-utils.js?v=8"></script>
-  <script src="db.js?v=8"></script>
-  <script src="chart.js?v=8"></script>
-  <script src="app.js?v=8"></script>
+  <script src="../../shared/form-utils.js?v=9"></script>
+  <script src="db.js?v=9"></script>
+  <script src="chart.js?v=9"></script>
+  <script src="app.js?v=9"></script>
 
   <!-- Service Worker 登録 -->
   <script>
     if ("serviceWorker" in navigator) {
       caches.keys().then(function(names) {
         names.forEach(function(name) {
-          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v8") {
+          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v9") {
             caches.delete(name);
           }
         });
       });
-      navigator.serviceWorker.register("sw.js?v=8").catch(function () {});
+      navigator.serviceWorker.register("sw.js?v=9").catch(function () {});
     }
   </script>
 </body>

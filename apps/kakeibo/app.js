@@ -15,6 +15,7 @@ var KakeiboApp = (function () {
   var dbReady = false;
   var pendingImageBase64 = null; // OCR時のレシート画像を一時保持
   var businessMode = false; // 事業用モード（クラウド同期ON）
+  var backupEmail = null; // 個人用モード: バックアップ用メアド（ハッシュ化して使用）
 
   var CATEGORIES = [
     "食費", "日用品", "交通費", "住居費", "水道光熱費", "通信費",
@@ -49,14 +50,16 @@ var KakeiboApp = (function () {
       return KakeiboDB.getSetting("mode");
     }).then(function (mode) {
       if (!mode) {
-        // 初回起動: モード選択画面を表示
         FormUtils.showScreen("mode-select-screen");
         return;
       }
       businessMode = (mode === "business");
-      updateModeDisplay();
-      loadTodayTotal();
-      loadHistory();
+      return KakeiboDB.getSetting("backupEmail").then(function (email) {
+        backupEmail = email || null;
+        updateModeDisplay();
+        loadTodayTotal();
+        loadHistory();
+      });
     }).catch(function (err) {
       dbReady = true;
       console.error("IndexedDB初期化エラー:", err);
@@ -156,8 +159,11 @@ var KakeiboApp = (function () {
         snapshot: JSON.parse(JSON.stringify(tx))
       });
     }).then(function () {
-      // 事業用モード: クラウド同期
-      return syncToGas("kakeibo_save", { transaction: tx });
+      // クラウド同期（事業用）または匿名バックアップ（個人用）
+      if (businessMode) {
+        return syncToGas("kakeibo_save", { transaction: tx });
+      }
+      return autoBackup();
     }).then(function () {
       FormUtils.showToast("保存しました");
       document.getElementById("input-amount").value = "";
@@ -503,12 +509,15 @@ var KakeiboApp = (function () {
         return KakeiboDB.saveImage(txId, pendingImageBase64, "image/jpeg");
       }
     }).then(function () {
-      // 事業用モード: クラウド同期（画像付き）
-      return syncToGas("kakeibo_save", {
-        transaction: tx,
-        imageBase64: pendingImageBase64,
-        mimeType: "image/jpeg"
-      });
+      // クラウド同期（事業用）または匿名バックアップ（個人用）
+      if (businessMode) {
+        return syncToGas("kakeibo_save", {
+          transaction: tx,
+          imageBase64: pendingImageBase64,
+          mimeType: "image/jpeg"
+        });
+      }
+      return autoBackup();
     }).then(function () {
       FormUtils.showToast("保存しました");
       pendingImageBase64 = null;
@@ -677,8 +686,10 @@ var KakeiboApp = (function () {
       // 画像も削除（監査ログには残る）
       return KakeiboDB.deleteImage(txId);
     }).then(function () {
-      // 事業用モード: クラウド同期
-      return syncToGas("kakeibo_delete", { transactionId: txId });
+      if (businessMode) {
+        return syncToGas("kakeibo_delete", { transactionId: txId });
+      }
+      return autoBackup();
     }).then(function () {
       FormUtils.showToast("削除しました");
       editingId = null;
@@ -1069,16 +1080,42 @@ var KakeiboApp = (function () {
     }
   }
 
+  // === SHA-256ハッシュ（メアド匿名化用） ===
+  function sha256(str) {
+    var buf = new TextEncoder().encode(str.toLowerCase().trim());
+    return crypto.subtle.digest("SHA-256", buf).then(function (hash) {
+      var arr = new Uint8Array(hash);
+      var hex = "";
+      for (var i = 0; i < arr.length; i++) {
+        hex += ("0" + arr[i].toString(16)).slice(-2);
+      }
+      return hex;
+    });
+  }
+
   // === モード選択・切替 ===
   function selectMode(mode) {
     businessMode = (mode === "business");
+
+    // 個人用モードの場合、メアドを取得
+    var emailInput = document.getElementById("mode-email");
+    var email = emailInput ? emailInput.value.trim() : "";
+
     KakeiboDB.setSetting("mode", mode).then(function () {
+      if (email) {
+        backupEmail = email;
+        return KakeiboDB.setSetting("backupEmail", email);
+      }
+      return Promise.resolve();
+    }).then(function () {
       updateModeDisplay();
       FormUtils.showScreen("main-screen");
       loadTodayTotal();
       loadHistory();
       if (businessMode) {
         FormUtils.showToast("事業用モード: クラウド同期ON");
+      } else if (backupEmail) {
+        FormUtils.showToast("個人用モード: 自動バックアップON");
       } else {
         FormUtils.showToast("個人用モード: ローカル保存のみ");
       }
@@ -1101,8 +1138,13 @@ var KakeiboApp = (function () {
     if (display) {
       if (businessMode) {
         display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#E8F5E9;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">☁️</span><div><div style="font-size:13px;font-weight:700;color:#2E7D32">事業用モード</div><div style="font-size:11px;color:#666">クラウド同期ON・電子帳簿保存法対応</div></div></div>';
+      } else if (backupEmail) {
+        var masked = backupEmail.replace(/^(.{2})(.*)(@.*)$/, function (m, a, b, c) {
+          return a + b.replace(/./g, "*") + c;
+        });
+        display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#E3F2FD;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">🔒</span><div><div style="font-size:13px;font-weight:700;color:#1565C0">個人用モード（バックアップON）</div><div style="font-size:11px;color:#666">' + escapeHtml(masked) + ' で自動バックアップ</div></div></div>';
       } else {
-        display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#E3F2FD;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">🔒</span><div><div style="font-size:13px;font-weight:700;color:#1565C0">個人用モード</div><div style="font-size:11px;color:#666">ローカル保存のみ・プライバシー重視</div></div></div>';
+        display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#FFF3E0;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">⚠️</span><div><div style="font-size:13px;font-weight:700;color:#E65100">個人用モード（バックアップなし）</div><div style="font-size:11px;color:#666">キャッシュクリアでデータが消失する可能性があります</div></div></div>';
       }
     }
     // 同期ボタンの表示切替
@@ -1110,16 +1152,116 @@ var KakeiboApp = (function () {
     if (syncBtn) {
       syncBtn.style.display = businessMode ? "block" : "none";
     }
+    // 復元ボタンの表示切替
+    var restoreBtn = document.getElementById("btn-restore-from-email");
+    if (restoreBtn) {
+      restoreBtn.style.display = (!businessMode) ? "block" : "none";
+    }
+    // メアド設定ボタン
+    var emailBtn = document.getElementById("btn-set-backup-email");
+    if (emailBtn) {
+      emailBtn.style.display = (!businessMode) ? "block" : "none";
+    }
     // ヘッダーバッジ
     var badge = document.getElementById("mode-badge");
     if (badge) {
       if (businessMode) {
         badge.textContent = "☁️ 事業用";
+        badge.style.display = "inline-block";
+        badge.classList.remove("hidden");
+      } else if (backupEmail) {
+        badge.textContent = "🔒 バックアップON";
+        badge.style.display = "inline-block";
         badge.classList.remove("hidden");
       } else {
         badge.classList.add("hidden");
       }
     }
+  }
+
+  // === 個人用モード: 匿名自動バックアップ ===
+  function autoBackup() {
+    if (businessMode || !backupEmail) return Promise.resolve();
+
+    return KakeiboDB.exportAll(false).then(function (data) {
+      return sha256(backupEmail).then(function (hashedEmail) {
+        return fetch(GAS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({
+            action: "kakeibo_backup",
+            hashedEmail: hashedEmail,
+            data: data
+          })
+        });
+      });
+    }).then(function (r) { return r.text(); })
+    .then(function (text) {
+      try {
+        var res = JSON.parse(text);
+        if (!res.ok) console.error("バックアップエラー:", res.error);
+      } catch (e) {
+        console.error("バックアップレスポンスエラー:", e);
+      }
+    }).catch(function (err) {
+      console.error("バックアップ通信エラー:", err);
+    });
+  }
+
+  function restoreFromEmail() {
+    var email = prompt("バックアップに使用したメールアドレスを入力してください");
+    if (!email || !email.trim()) return;
+    email = email.trim();
+
+    showSpinner("バックアップを復元中...");
+    sha256(email).then(function (hashedEmail) {
+      return fetch(GAS_URL + "?action=kakeibo_restore&hashedEmail=" + encodeURIComponent(hashedEmail));
+    }).then(function (r) { return r.text(); })
+    .then(function (text) {
+      var res = JSON.parse(text);
+      if (!res.ok) {
+        hideSpinner();
+        FormUtils.showToast(res.error || "バックアップが見つかりません");
+        return;
+      }
+      return KakeiboDB.importAll(res.data).then(function () {
+        // メアドも保存
+        backupEmail = email;
+        return KakeiboDB.setSetting("backupEmail", email);
+      }).then(function () {
+        hideSpinner();
+        FormUtils.showToast("復元しました（" + res.updatedAt + " のバックアップ）");
+        updateModeDisplay();
+        loadHistory();
+        loadTodayTotal();
+      });
+    }).catch(function (err) {
+      hideSpinner();
+      console.error("復元エラー:", err);
+      FormUtils.showToast("復元に失敗しました");
+    });
+  }
+
+  function setBackupEmail() {
+    var msg = backupEmail
+      ? "現在のメールアドレス: " + backupEmail + "\n新しいメールアドレスを入力（空欄でバックアップ解除）"
+      : "バックアップ用メールアドレスを入力";
+    var email = prompt(msg);
+    if (email === null) return; // キャンセル
+
+    email = email.trim();
+    backupEmail = email || null;
+    KakeiboDB.setSetting("backupEmail", email || "").then(function () {
+      updateModeDisplay();
+      if (email) {
+        FormUtils.showToast("バックアップ用メアドを設定しました");
+        return autoBackup();
+      } else {
+        FormUtils.showToast("バックアップを解除しました");
+      }
+    }).catch(function (err) {
+      console.error("メアド設定エラー:", err);
+    });
   }
 
   // === GAS同期（事業用モードのみ） ===
@@ -1215,7 +1357,9 @@ var KakeiboApp = (function () {
     executeSearch: executeSearch,
     selectMode: selectMode,
     switchMode: switchMode,
-    syncFromGas: syncFromGas
+    syncFromGas: syncFromGas,
+    restoreFromEmail: restoreFromEmail,
+    setBackupEmail: setBackupEmail
   };
 })();
 

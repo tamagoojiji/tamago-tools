@@ -8,9 +8,10 @@ var KakeiboApp = (function () {
   var GAS_URL = "https://script.google.com/macros/s/AKfycbwvemxonI88X44s0mgJ-mkLCHDvXnhqieExvsv026ZKaQU_462bePBPQqucu1mPslhFPA/exec";
   var userId = null;
   var currentTab = "input";
-  var currentMonth = null; // "YYYY-MM"
-  var editingId = null; // 編集中のtransaction ID
-  var ocrQueue = []; // ライブラリ複数選択時のキュー
+  var currentMonth = null;
+  var editingId = null;
+  var ocrQueue = [];
+  var dbReady = false;
 
   var CATEGORIES = [
     "食費", "日用品", "交通費", "住居費", "水道光熱費", "通信費",
@@ -27,17 +28,33 @@ var KakeiboApp = (function () {
 
   // === 初期化 ===
   function init() {
-    userId = FormUtils.getUserId();
+    try {
+      userId = FormUtils.getUserId();
+    } catch (e) {
+      userId = "browser_" + Math.random().toString(36).substr(2, 9);
+    }
     var now = new Date();
-    currentMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    currentMonth = now.getFullYear() + "-" + padZero(now.getMonth() + 1);
 
+    // イベントリスナーは即座にセット（DB初期化を待たない）
+    setupTabs();
+    setupInputForm();
+    setupCamera();
+
+    // DB初期化（失敗しても画面は動く）
     KakeiboDB.open().then(function () {
-      setupTabs();
-      setupInputForm();
-      setupCamera();
+      dbReady = true;
       loadTodayTotal();
       loadHistory();
+    }).catch(function (err) {
+      dbReady = true; // 再試行可能にする
+      console.error("IndexedDB初期化エラー:", err);
+      FormUtils.showToast("データベースの初期化に失敗しました。ページを再読み込みしてください。");
     });
+  }
+
+  function padZero(n) {
+    return n < 10 ? "0" + n : "" + n;
   }
 
   // === タブ切替 ===
@@ -69,45 +86,51 @@ var KakeiboApp = (function () {
 
   // === 入力タブ ===
   function setupInputForm() {
-    // カテゴリ選択肢を生成
     var sel = document.getElementById("input-category");
-    CATEGORIES.forEach(function (cat) {
-      var opt = document.createElement("option");
-      opt.value = cat;
-      opt.textContent = (CATEGORY_ICONS[cat] || "") + " " + cat;
-      sel.appendChild(opt);
-    });
+    if (sel) {
+      for (var i = 0; i < CATEGORIES.length; i++) {
+        var opt = document.createElement("option");
+        opt.value = CATEGORIES[i];
+        opt.textContent = (CATEGORY_ICONS[CATEGORIES[i]] || "") + " " + CATEGORIES[i];
+        sel.appendChild(opt);
+      }
+    }
 
-    // 日付デフォルト: 今日
-    document.getElementById("input-date").value = todayStr();
+    var dateInput = document.getElementById("input-date");
+    if (dateInput) {
+      dateInput.value = todayStr();
+    }
 
-    // 手入力保存ボタン
-    document.getElementById("btn-save-manual").addEventListener("click", saveManualInput);
+    var saveBtn = document.getElementById("btn-save-manual");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", saveManualInput);
+    }
   }
 
   function todayStr() {
     var d = new Date();
-    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + padZero(d.getMonth() + 1) + "-" + padZero(d.getDate());
   }
 
   function saveManualInput() {
     var date = document.getElementById("input-date").value;
-    var amount = parseInt(document.getElementById("input-amount").value, 10);
+    var amountStr = document.getElementById("input-amount").value;
+    var amount = parseInt(amountStr, 10);
     var category = document.getElementById("input-category").value;
     var memo = document.getElementById("input-memo").value.trim();
 
-    if (!date || !amount || amount <= 0) {
+    if (!date || !amountStr || isNaN(amount) || amount <= 0) {
       FormUtils.showToast("日付と金額を入力してください");
       return;
     }
 
     var tx = {
-      id: FormUtils.generateId() + "_" + Date.now(),
+      id: generateUniqueId(),
       date: date,
       store: "",
       items: [],
       total: amount,
-      category: category,
+      category: category || "食費",
       memo: memo,
       inputType: "manual",
       createdAt: new Date().toISOString()
@@ -118,7 +141,14 @@ var KakeiboApp = (function () {
       document.getElementById("input-amount").value = "";
       document.getElementById("input-memo").value = "";
       loadTodayTotal();
+    }).catch(function (err) {
+      console.error("保存エラー:", err);
+      FormUtils.showToast("保存に失敗しました: " + err.message);
     });
+  }
+
+  function generateUniqueId() {
+    return Math.random().toString(36).substr(2, 8) + "_" + Date.now();
   }
 
   function loadTodayTotal() {
@@ -126,14 +156,16 @@ var KakeiboApp = (function () {
     KakeiboDB.getAllTransactions().then(function (all) {
       var total = 0;
       var count = 0;
-      all.forEach(function (tx) {
-        if (tx.date === today) {
-          total += tx.total;
+      for (var i = 0; i < all.length; i++) {
+        if (all[i].date === today) {
+          total += all[i].total;
           count++;
         }
-      });
+      }
       document.getElementById("today-total").textContent = total.toLocaleString() + "円";
       document.getElementById("today-count").textContent = count + "件";
+    }).catch(function (err) {
+      console.error("今日の合計読み込みエラー:", err);
     });
   }
 
@@ -141,33 +173,41 @@ var KakeiboApp = (function () {
   function setupCamera() {
     var cameraInput = document.getElementById("camera-input");
     var libraryInput = document.getElementById("library-input");
+    var btnCamera = document.getElementById("btn-camera");
+    var btnLibrary = document.getElementById("btn-library");
 
-    document.getElementById("btn-camera").addEventListener("click", function () {
-      cameraInput.click();
-    });
-    cameraInput.addEventListener("change", function (e) {
-      var file = e.target.files[0];
-      if (!file) return;
-      e.target.value = "";
-      ocrQueue = [];
-      processOneFile(file);
-    });
+    if (btnCamera && cameraInput) {
+      btnCamera.addEventListener("click", function () {
+        cameraInput.click();
+      });
+      cameraInput.addEventListener("change", function (e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        e.target.value = "";
+        ocrQueue = [];
+        processOneFile(file);
+      });
+    }
 
-    document.getElementById("btn-library").addEventListener("click", function () {
-      libraryInput.click();
-    });
-    libraryInput.addEventListener("change", function (e) {
-      var files = Array.from(e.target.files);
-      e.target.value = "";
-      if (files.length === 0) return;
-      if (files.length > 5) {
-        FormUtils.showToast("最大5枚まで選択できます");
-        files = files.slice(0, 5);
-      }
-      // 1枚目を即処理、残りをキューに入れる
-      ocrQueue = files.slice(1);
-      processOneFile(files[0]);
-    });
+    if (btnLibrary && libraryInput) {
+      btnLibrary.addEventListener("click", function () {
+        libraryInput.click();
+      });
+      libraryInput.addEventListener("change", function (e) {
+        var fileList = e.target.files;
+        var files = [];
+        for (var i = 0; i < fileList.length && i < 5; i++) {
+          files.push(fileList[i]);
+        }
+        e.target.value = "";
+        if (files.length === 0) return;
+        if (fileList.length > 5) {
+          FormUtils.showToast("最大5枚まで選択できます");
+        }
+        ocrQueue = files.slice(1);
+        processOneFile(files[0]);
+      });
+    }
   }
 
   function processOneFile(file) {
@@ -196,12 +236,14 @@ var KakeiboApp = (function () {
             processNextInQueue();
           }
         } catch (err) {
+          console.error("OCRレスポンスパースエラー:", err, text);
           FormUtils.showToast("レスポンスの解析に失敗しました");
           processNextInQueue();
         }
       })
-      .catch(function () {
+      .catch(function (err) {
         hideSpinner();
+        console.error("OCR通信エラー:", err);
         FormUtils.showToast("通信エラーが発生しました");
         processNextInQueue();
       });
@@ -235,7 +277,15 @@ var KakeiboApp = (function () {
         var base64 = dataUrl.split(",")[1];
         callback(base64, "image/jpeg");
       };
+      img.onerror = function () {
+        FormUtils.showToast("画像の読み込みに失敗しました");
+        hideSpinner();
+      };
       img.src = e.target.result;
+    };
+    reader.onerror = function () {
+      FormUtils.showToast("ファイルの読み込みに失敗しました");
+      hideSpinner();
     };
     reader.readAsDataURL(file);
   }
@@ -244,7 +294,6 @@ var KakeiboApp = (function () {
     editingId = null;
     document.getElementById("btn-delete-tx").classList.add("hidden");
 
-    // キュー残数表示
     var queueLabel = document.getElementById("queue-label");
     if (ocrQueue.length > 0) {
       queueLabel.textContent = "残り " + ocrQueue.length + " 枚";
@@ -259,13 +308,12 @@ var KakeiboApp = (function () {
     document.getElementById("edit-category").value = receipt.category || "食費";
     document.getElementById("edit-memo").value = "";
 
-    // 品目リスト
     var itemsEl = document.getElementById("edit-items");
     itemsEl.innerHTML = "";
     if (receipt.items && receipt.items.length > 0) {
-      receipt.items.forEach(function (item) {
-        addItemRow(item.name, item.price, item.quantity);
-      });
+      for (var i = 0; i < receipt.items.length; i++) {
+        addItemRow(receipt.items[i].name, receipt.items[i].price, receipt.items[i].quantity);
+      }
     }
 
     FormUtils.showScreen("edit-screen");
@@ -275,29 +323,55 @@ var KakeiboApp = (function () {
     var itemsEl = document.getElementById("edit-items");
     var row = document.createElement("div");
     row.className = "item-row";
-    row.innerHTML =
-      '<input type="text" class="form-input item-name" placeholder="品名" value="' + (name || "") + '" style="flex:3">' +
-      '<input type="number" class="form-input item-price" placeholder="金額" value="' + (price || "") + '" style="flex:2">' +
-      '<input type="number" class="form-input item-qty" placeholder="数" value="' + (qty || 1) + '" style="flex:1;min-width:50px">' +
-      '<button type="button" class="data-card-delete" onclick="this.parentElement.remove();KakeiboApp.recalcTotal()">&times;</button>';
 
-    // 金額変更時に合計再計算
-    var priceInput = row.querySelector(".item-price");
-    var qtyInput = row.querySelector(".item-qty");
+    var nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = "form-input item-name";
+    nameInput.placeholder = "品名";
+    nameInput.value = name || "";
+    nameInput.style.flex = "3";
+
+    var priceInput = document.createElement("input");
+    priceInput.type = "number";
+    priceInput.className = "form-input item-price";
+    priceInput.placeholder = "金額";
+    priceInput.value = price || "";
+    priceInput.style.flex = "2";
     priceInput.addEventListener("input", recalcTotal);
+
+    var qtyInput = document.createElement("input");
+    qtyInput.type = "number";
+    qtyInput.className = "form-input item-qty";
+    qtyInput.placeholder = "数";
+    qtyInput.value = qty || 1;
+    qtyInput.style.flex = "1";
+    qtyInput.style.minWidth = "50px";
     qtyInput.addEventListener("input", recalcTotal);
 
+    var delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "data-card-delete";
+    delBtn.textContent = "×";
+    delBtn.addEventListener("click", function () {
+      row.remove();
+      recalcTotal();
+    });
+
+    row.appendChild(nameInput);
+    row.appendChild(priceInput);
+    row.appendChild(qtyInput);
+    row.appendChild(delBtn);
     itemsEl.appendChild(row);
   }
 
   function recalcTotal() {
     var rows = document.querySelectorAll("#edit-items .item-row");
     var sum = 0;
-    rows.forEach(function (row) {
-      var p = parseInt(row.querySelector(".item-price").value, 10) || 0;
-      var q = parseInt(row.querySelector(".item-qty").value, 10) || 1;
+    for (var i = 0; i < rows.length; i++) {
+      var p = parseInt(rows[i].querySelector(".item-price").value, 10) || 0;
+      var q = parseInt(rows[i].querySelector(".item-qty").value, 10) || 1;
       sum += p * q;
-    });
+    }
     if (sum > 0) {
       document.getElementById("edit-amount").value = sum;
     }
@@ -305,32 +379,33 @@ var KakeiboApp = (function () {
 
   function saveEdit() {
     var date = document.getElementById("edit-date").value;
-    var amount = parseInt(document.getElementById("edit-amount").value, 10);
+    var amountStr = document.getElementById("edit-amount").value;
+    var amount = parseInt(amountStr, 10);
     var category = document.getElementById("edit-category").value;
 
-    if (!date || !amount || amount <= 0) {
+    if (!date || !amountStr || isNaN(amount) || amount <= 0) {
       FormUtils.showToast("日付と金額を入力してください");
       return;
     }
 
-    // 品目収集
     var items = [];
-    document.querySelectorAll("#edit-items .item-row").forEach(function (row) {
-      var name = row.querySelector(".item-name").value.trim();
-      var price = parseInt(row.querySelector(".item-price").value, 10) || 0;
-      var qty = parseInt(row.querySelector(".item-qty").value, 10) || 1;
+    var itemRows = document.querySelectorAll("#edit-items .item-row");
+    for (var i = 0; i < itemRows.length; i++) {
+      var name = itemRows[i].querySelector(".item-name").value.trim();
+      var price = parseInt(itemRows[i].querySelector(".item-price").value, 10) || 0;
+      var qty = parseInt(itemRows[i].querySelector(".item-qty").value, 10) || 1;
       if (name || price > 0) {
         items.push({ name: name, price: price, quantity: qty });
       }
-    });
+    }
 
     var tx = {
-      id: editingId || (FormUtils.generateId() + "_" + Date.now()),
+      id: editingId || generateUniqueId(),
       date: date,
       store: document.getElementById("edit-store").value.trim(),
       items: items,
       total: amount,
-      category: category,
+      category: category || "食費",
       memo: document.getElementById("edit-memo").value.trim(),
       inputType: editingId ? "edited" : "ocr",
       createdAt: new Date().toISOString()
@@ -345,6 +420,9 @@ var KakeiboApp = (function () {
       } else {
         FormUtils.showScreen("main-screen");
       }
+    }).catch(function (err) {
+      console.error("保存エラー:", err);
+      FormUtils.showToast("保存に失敗しました: " + err.message);
     });
   }
 
@@ -370,14 +448,14 @@ var KakeiboApp = (function () {
         return;
       }
 
-      // 日付降順ソート
       txs.sort(function (a, b) { return b.date > a.date ? 1 : b.date < a.date ? -1 : 0; });
 
       var total = 0;
       var html = "";
       var lastDate = "";
 
-      txs.forEach(function (tx) {
+      for (var i = 0; i < txs.length; i++) {
+        var tx = txs[i];
         total += tx.total;
         if (tx.date !== lastDate) {
           lastDate = tx.date;
@@ -395,10 +473,12 @@ var KakeiboApp = (function () {
             '<div class="data-card-amount">' + tx.total.toLocaleString() + '円</div>' +
           '</div>' +
         '</div>';
-      });
+      }
 
       container.innerHTML = html;
       document.getElementById("history-month-total").textContent = total.toLocaleString() + "円";
+    }).catch(function (err) {
+      console.error("履歴読み込みエラー:", err);
     });
   }
 
@@ -415,14 +495,15 @@ var KakeiboApp = (function () {
       var itemsEl = document.getElementById("edit-items");
       itemsEl.innerHTML = "";
       if (tx.items && tx.items.length > 0) {
-        tx.items.forEach(function (item) {
-          addItemRow(item.name, item.price, item.quantity);
-        });
+        for (var i = 0; i < tx.items.length; i++) {
+          addItemRow(tx.items[i].name, tx.items[i].price, tx.items[i].quantity);
+        }
       }
 
-      // 削除ボタン表示
       document.getElementById("btn-delete-tx").classList.remove("hidden");
       FormUtils.showScreen("edit-screen");
+    }).catch(function (err) {
+      console.error("詳細読み込みエラー:", err);
     });
   }
 
@@ -436,6 +517,9 @@ var KakeiboApp = (function () {
       FormUtils.showScreen("main-screen");
       loadHistory();
       loadTodayTotal();
+    }).catch(function (err) {
+      console.error("削除エラー:", err);
+      FormUtils.showToast("削除に失敗しました");
     });
   }
 
@@ -454,22 +538,21 @@ var KakeiboApp = (function () {
       var categoryMap = {};
       var dailyMap = {};
 
-      txs.forEach(function (tx) {
-        total += tx.total;
-        categoryMap[tx.category] = (categoryMap[tx.category] || 0) + tx.total;
-        var day = parseInt(tx.date.split("-")[2], 10);
-        dailyMap[day] = (dailyMap[day] || 0) + tx.total;
-      });
+      for (var i = 0; i < txs.length; i++) {
+        total += txs[i].total;
+        categoryMap[txs[i].category] = (categoryMap[txs[i].category] || 0) + txs[i].total;
+        var day = parseInt(txs[i].date.split("-")[2], 10);
+        dailyMap[day] = (dailyMap[day] || 0) + txs[i].total;
+      }
 
-      // カテゴリデータ
       var categoryData = [];
       for (var cat in categoryMap) {
         categoryData.push({ category: cat, total: categoryMap[cat] });
       }
       categoryData.sort(function (a, b) { return b.total - a.total; });
 
-      // 日別データ
-      var daysInMonth = new Date(parseInt(currentMonth.split("-")[0]), parseInt(currentMonth.split("-")[1]), 0).getDate();
+      var parts = currentMonth.split("-");
+      var daysInMonth = new Date(parseInt(parts[0]), parseInt(parts[1]), 0).getDate();
       var dailyData = [];
       for (var d = 1; d <= daysInMonth; d++) {
         dailyData.push({ label: d + "日", total: dailyMap[d] || 0 });
@@ -477,7 +560,6 @@ var KakeiboApp = (function () {
 
       var avg = Math.round(total / txs.length);
 
-      // 統計カード
       var statsHtml =
         '<div class="stat-row">' +
           '<div class="stat-card"><div class="stat-label">合計</div><div class="stat-value">' + total.toLocaleString() + '円</div></div>' +
@@ -485,10 +567,9 @@ var KakeiboApp = (function () {
           '<div class="stat-card"><div class="stat-label">平均</div><div class="stat-value">' + avg.toLocaleString() + '円</div></div>' +
         '</div>';
 
-      // 予算比較
       KakeiboDB.getBudgetsByMonth(currentMonth).then(function (budgets) {
         var budgetTotal = 0;
-        budgets.forEach(function (b) { budgetTotal += b.amount; });
+        for (var b = 0; b < budgets.length; b++) { budgetTotal += budgets[b].amount; }
 
         var budgetHtml = "";
         if (budgetTotal > 0) {
@@ -516,42 +597,47 @@ var KakeiboApp = (function () {
           '<div class="section-title" style="margin-top:24px">累計推移</div>' +
           '<canvas id="chart-line"></canvas>';
 
-        // カテゴリ内訳リスト
         var breakdownHtml = '<div class="section-title" style="margin-top:24px">内訳</div>';
-        categoryData.forEach(function (cd) {
-          var icon = CATEGORY_ICONS[cd.category] || "📦";
+        for (var c = 0; c < categoryData.length; c++) {
+          var cd = categoryData[c];
+          var cdIcon = CATEGORY_ICONS[cd.category] || "📦";
           var pctCat = Math.round(cd.total / total * 100);
           breakdownHtml +=
             '<div class="bar-row">' +
-              '<div class="bar-label">' + icon + '</div>' +
+              '<div class="bar-label">' + cdIcon + '</div>' +
               '<div class="bar-track"><div class="bar-fill" style="width:' + pctCat + '%;background:' + KakeiboChart.getColor(cd.category) + '"></div></div>' +
               '<div class="bar-value">' + cd.total.toLocaleString() + '円</div>' +
             '</div>';
-        });
+        }
 
         document.getElementById("report-content").innerHTML = statsHtml + budgetHtml + chartHtml + breakdownHtml;
 
-        // グラフ描画（DOMが更新された後）
         setTimeout(function () {
           KakeiboChart.renderPie("chart-pie", categoryData);
           KakeiboChart.renderBar("chart-bar", dailyData);
           KakeiboChart.renderLine("chart-line", dailyData, budgetTotal);
         }, 50);
+      }).catch(function (err) {
+        console.error("予算読み込みエラー:", err);
       });
+    }).catch(function (err) {
+      console.error("レポート読み込みエラー:", err);
     });
   }
 
   // === 設定タブ ===
   function loadSettings() {
-    // 予算設定を読み込み
+    updateMonthSelector("settings");
+
     KakeiboDB.getBudgetsByMonth(currentMonth).then(function (budgets) {
       var container = document.getElementById("budget-list");
       container.innerHTML = "";
 
       var budgetMap = {};
-      budgets.forEach(function (b) { budgetMap[b.category] = b.amount; });
+      for (var b = 0; b < budgets.length; b++) { budgetMap[budgets[b].category] = budgets[b].amount; }
 
-      CATEGORIES.forEach(function (cat) {
+      for (var i = 0; i < CATEGORIES.length; i++) {
+        var cat = CATEGORIES[i];
         var row = document.createElement("div");
         row.className = "form-row";
         row.style.marginBottom = "8px";
@@ -563,26 +649,30 @@ var KakeiboApp = (function () {
             '<input type="number" class="form-input budget-input" data-category="' + cat + '" placeholder="0" value="' + (budgetMap[cat] || "") + '" style="padding:8px;font-size:13px;text-align:right">' +
           '</div>';
         container.appendChild(row);
-      });
+      }
+    }).catch(function (err) {
+      console.error("設定読み込みエラー:", err);
     });
   }
 
   function saveBudgets() {
     var inputs = document.querySelectorAll(".budget-input");
     var promises = [];
-    inputs.forEach(function (input) {
-      var cat = input.dataset.category;
-      var amount = parseInt(input.value, 10) || 0;
+    for (var i = 0; i < inputs.length; i++) {
+      var cat = inputs[i].dataset.category;
+      var amount = parseInt(inputs[i].value, 10) || 0;
       if (amount > 0) {
         promises.push(KakeiboDB.saveBudget(currentMonth, cat, amount));
       }
-    });
+    }
     Promise.all(promises).then(function () {
       FormUtils.showToast("予算を保存しました");
+    }).catch(function (err) {
+      console.error("予算保存エラー:", err);
+      FormUtils.showToast("予算の保存に失敗しました");
     });
   }
 
-  // エクスポート
   function exportData() {
     KakeiboDB.exportAll().then(function (data) {
       var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -593,6 +683,9 @@ var KakeiboApp = (function () {
       a.click();
       URL.revokeObjectURL(url);
       FormUtils.showToast("エクスポートしました");
+    }).catch(function (err) {
+      console.error("エクスポートエラー:", err);
+      FormUtils.showToast("エクスポートに失敗しました");
     });
   }
 
@@ -600,15 +693,15 @@ var KakeiboApp = (function () {
     KakeiboDB.getAllTransactions().then(function (txs) {
       txs.sort(function (a, b) { return a.date > b.date ? 1 : -1; });
       var lines = ["日付,カテゴリ,金額,メモ,店名"];
-      txs.forEach(function (tx) {
+      for (var i = 0; i < txs.length; i++) {
         lines.push([
-          tx.date,
-          tx.category,
-          tx.total,
-          '"' + (tx.memo || "").replace(/"/g, '""') + '"',
-          '"' + (tx.store || "").replace(/"/g, '""') + '"'
+          txs[i].date,
+          txs[i].category,
+          txs[i].total,
+          '"' + (txs[i].memo || "").replace(/"/g, '""') + '"',
+          '"' + (txs[i].store || "").replace(/"/g, '""') + '"'
         ].join(","));
-      });
+      }
       var bom = "\uFEFF";
       var blob = new Blob([bom + lines.join("\n")], { type: "text/csv;charset=utf-8" });
       var url = URL.createObjectURL(blob);
@@ -618,6 +711,8 @@ var KakeiboApp = (function () {
       a.click();
       URL.revokeObjectURL(url);
       FormUtils.showToast("CSVエクスポートしました");
+    }).catch(function (err) {
+      console.error("CSVエクスポートエラー:", err);
     });
   }
 
@@ -636,6 +731,8 @@ var KakeiboApp = (function () {
             FormUtils.showToast("インポートしました");
             loadHistory();
             loadTodayTotal();
+          }).catch(function (err) {
+            FormUtils.showToast("インポートに失敗しました: " + err.message);
           });
         } catch (err) {
           FormUtils.showToast("ファイルの読み込みに失敗しました");
@@ -653,6 +750,8 @@ var KakeiboApp = (function () {
       FormUtils.showToast("全データを削除しました");
       loadHistory();
       loadTodayTotal();
+    }).catch(function (err) {
+      console.error("全削除エラー:", err);
     });
   }
 
@@ -671,7 +770,7 @@ var KakeiboApp = (function () {
     var m = parseInt(parts[1]) + delta;
     if (m < 1) { m = 12; y--; }
     if (m > 12) { m = 1; y++; }
-    currentMonth = y + "-" + String(m).padStart(2, "0");
+    currentMonth = y + "-" + padZero(m);
 
     if (section === "history") loadHistory();
     if (section === "report") loadReport();
@@ -694,7 +793,6 @@ var KakeiboApp = (function () {
     return div.innerHTML;
   }
 
-  // === Public API ===
   return {
     init: init,
     switchTab: switchTab,
@@ -713,5 +811,4 @@ var KakeiboApp = (function () {
   };
 })();
 
-// 起動
 document.addEventListener("DOMContentLoaded", KakeiboApp.init);

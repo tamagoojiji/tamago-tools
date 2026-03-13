@@ -411,14 +411,20 @@ var KakeiboApp = (function () {
       createdAt: new Date().toISOString()
     };
 
+    console.log("saveEdit: 保存開始", JSON.stringify(tx));
     KakeiboDB.addTransaction(tx).then(function () {
-      FormUtils.showToast("保存しました");
+      // 保存確認: 全件数を表示
+      return KakeiboDB.getAllTransactions();
+    }).then(function (all) {
+      console.log("saveEdit: 保存完了。全" + all.length + "件");
+      FormUtils.showToast("保存しました（全" + all.length + "件）");
       editingId = null;
       loadTodayTotal();
       if (ocrQueue.length > 0) {
         processNextInQueue();
       } else {
         FormUtils.showScreen("main-screen");
+        switchTab("history");
       }
     }).catch(function (err) {
       console.error("保存エラー:", err);
@@ -439,11 +445,24 @@ var KakeiboApp = (function () {
   function loadHistory() {
     updateMonthSelector("history");
 
-    KakeiboDB.getTransactionsByMonth(currentMonth).then(function (txs) {
+    console.log("loadHistory: currentMonth=" + currentMonth);
+    KakeiboDB.getAllTransactions().then(function (allTxs) {
+      console.log("loadHistory: 全件=" + allTxs.length);
+      if (allTxs.length > 0) {
+        console.log("loadHistory: 日付一覧=" + allTxs.map(function(t){return t.date}).join(","));
+      }
+      var txs = allTxs.filter(function (tx) {
+        return tx.date && tx.date.substring(0, 7) === currentMonth;
+      });
+      console.log("loadHistory: 今月分=" + txs.length);
+
       var container = document.getElementById("history-list");
 
       if (txs.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📝</div><div class="empty-state-text">この月のデータはありません</div></div>';
+        var debugMsg = allTxs.length > 0
+          ? "全" + allTxs.length + "件ありますが、" + currentMonth + "のデータはありません"
+          : "データはまだありません";
+        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📝</div><div class="empty-state-text">' + debugMsg + '</div></div>';
         document.getElementById("history-month-total").textContent = "0円";
         return;
       }

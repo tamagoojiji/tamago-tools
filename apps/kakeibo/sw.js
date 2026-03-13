@@ -1,4 +1,4 @@
-var CACHE_NAME = "kakeibo-v4";
+var CACHE_NAME = "kakeibo-v5";
 var ASSETS = [
   "./",
   "./index.html",
@@ -37,18 +37,18 @@ self.addEventListener("fetch", function (e) {
   // Chart.js CDN はネットワーク優先
   if (e.request.url.indexOf("cdn.jsdelivr.net") !== -1) return;
 
+  // ネットワーク優先、失敗時のみキャッシュ
   e.respondWith(
-    caches.match(e.request).then(function (cached) {
-      return cached || fetch(e.request).then(function (response) {
-        // 成功レスポンスをキャッシュに追加
-        if (response.status === 200) {
-          var clone = response.clone();
-          caches.open(CACHE_NAME).then(function (cache) {
-            cache.put(e.request, clone);
-          });
-        }
-        return response;
-      });
+    fetch(e.request).then(function (response) {
+      if (response.status === 200) {
+        var clone = response.clone();
+        caches.open(CACHE_NAME).then(function (cache) {
+          cache.put(e.request, clone);
+        });
+      }
+      return response;
+    }).catch(function () {
+      return caches.match(e.request);
     })
   );
 });

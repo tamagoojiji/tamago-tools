@@ -243,11 +243,13 @@
           <div class="today-summary-count" id="today-count">0件</div>
         </div>
 
-        <!-- レシート撮影 -->
+        <!-- レシート撮影 / ライブラリ -->
         <div class="camera-area">
           <div style="font-size:36px;margin-bottom:8px">📸</div>
-          <button id="btn-camera" class="btn btn-primary">レシートを撮影</button>
+          <button id="btn-camera" class="btn btn-primary" style="margin-bottom:8px">レシートを撮影</button>
           <input type="file" id="camera-input" accept="image/*" capture="environment" class="hidden">
+          <button id="btn-library" class="btn btn-outline" style="width:100%">ライブラリから選択（最大5枚）</button>
+          <input type="file" id="library-input" accept="image/*" multiple class="hidden">
           <p style="font-size:11px;color:var(--text-light);margin-top:8px">AIが自動で金額・カテゴリを読み取ります</p>
         </div>
 
@@ -360,7 +362,10 @@
   <!-- 編集画面 -->
   <div id="edit-screen" data-screen class="hidden">
     <div class="container" style="padding-top:16px">
-      <h2 style="font-size:18px;font-weight:700;color:var(--secondary);margin-bottom:16px">記録を編集</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h2 style="font-size:18px;font-weight:700;color:var(--secondary);margin:0">記録を編集</h2>
+        <span id="queue-label" class="hidden" style="font-size:12px;font-weight:700;color:var(--primary);background:#FFF3E0;padding:4px 12px;border-radius:20px"></span>
+      </div>
 
       <div class="form-row">
         <div class="form-group" style="flex:1">

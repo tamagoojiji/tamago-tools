@@ -10,6 +10,7 @@ var KakeiboApp = (function () {
   var currentTab = "input";
   var currentMonth = null; // "YYYY-MM"
   var editingId = null; // 編集中のtransaction ID
+  var ocrQueue = []; // ライブラリ複数選択時のキュー
 
   var CATEGORIES = [
     "食費", "日用品", "交通費", "住居費", "水道光熱費", "通信費",
@@ -138,21 +139,41 @@ var KakeiboApp = (function () {
 
   // === カメラ / OCR ===
   function setupCamera() {
-    var fileInput = document.getElementById("camera-input");
+    var cameraInput = document.getElementById("camera-input");
+    var libraryInput = document.getElementById("library-input");
+
     document.getElementById("btn-camera").addEventListener("click", function () {
-      fileInput.click();
+      cameraInput.click();
     });
-    fileInput.addEventListener("change", handleImageSelect);
+    cameraInput.addEventListener("change", function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      e.target.value = "";
+      ocrQueue = [];
+      processOneFile(file);
+    });
+
+    document.getElementById("btn-library").addEventListener("click", function () {
+      libraryInput.click();
+    });
+    libraryInput.addEventListener("change", function (e) {
+      var files = Array.from(e.target.files);
+      e.target.value = "";
+      if (files.length === 0) return;
+      if (files.length > 5) {
+        FormUtils.showToast("最大5枚まで選択できます");
+        files = files.slice(0, 5);
+      }
+      // 1枚目を即処理、残りをキューに入れる
+      ocrQueue = files.slice(1);
+      processOneFile(files[0]);
+    });
   }
 
-  function handleImageSelect(e) {
-    var file = e.target.files[0];
-    if (!file) return;
-    e.target.value = "";
-
-    showSpinner("レシートを読み取り中...");
+  function processOneFile(file) {
+    var queueInfo = ocrQueue.length > 0 ? "（残り" + ocrQueue.length + "枚）" : "";
+    showSpinner("レシートを読み取り中..." + queueInfo);
     compressImage(file, function (base64, mimeType) {
-      // GAS OCR
       fetch(GAS_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
@@ -172,16 +193,26 @@ var KakeiboApp = (function () {
             showOcrResult(res.receipt);
           } else {
             FormUtils.showToast(res.error || "読み取りに失敗しました");
+            processNextInQueue();
           }
         } catch (err) {
           FormUtils.showToast("レスポンスの解析に失敗しました");
+          processNextInQueue();
         }
       })
       .catch(function () {
         hideSpinner();
         FormUtils.showToast("通信エラーが発生しました");
+        processNextInQueue();
       });
     });
+  }
+
+  function processNextInQueue() {
+    if (ocrQueue.length > 0) {
+      var next = ocrQueue.shift();
+      processOneFile(next);
+    }
   }
 
   function compressImage(file, callback) {
@@ -212,6 +243,16 @@ var KakeiboApp = (function () {
   function showOcrResult(receipt) {
     editingId = null;
     document.getElementById("btn-delete-tx").classList.add("hidden");
+
+    // キュー残数表示
+    var queueLabel = document.getElementById("queue-label");
+    if (ocrQueue.length > 0) {
+      queueLabel.textContent = "残り " + ocrQueue.length + " 枚";
+      queueLabel.classList.remove("hidden");
+    } else {
+      queueLabel.classList.add("hidden");
+    }
+
     document.getElementById("edit-date").value = receipt.date || todayStr();
     document.getElementById("edit-store").value = receipt.store || "";
     document.getElementById("edit-amount").value = receipt.total || "";
@@ -298,14 +339,22 @@ var KakeiboApp = (function () {
     KakeiboDB.addTransaction(tx).then(function () {
       FormUtils.showToast("保存しました");
       editingId = null;
-      FormUtils.showScreen("main-screen");
       loadTodayTotal();
+      if (ocrQueue.length > 0) {
+        processNextInQueue();
+      } else {
+        FormUtils.showScreen("main-screen");
+      }
     });
   }
 
   function cancelEdit() {
     editingId = null;
-    FormUtils.showScreen("main-screen");
+    if (ocrQueue.length > 0) {
+      processNextInQueue();
+    } else {
+      FormUtils.showScreen("main-screen");
+    }
   }
 
   // === 履歴タブ ===

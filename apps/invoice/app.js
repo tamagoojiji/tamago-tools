@@ -1249,12 +1249,12 @@ var InvoiceApp = (function () {
             '<div>お支払期限: ' + escapeHtml(inv.dueDate) + '</div>' +
           '</div>' +
         '</div>' +
-        '<div style="background:#FFF8F0;border-radius:8px;padding:12px;text-align:center;margin-bottom:16px;">' +
-          '<div style="font-size:11px;color:#888;">ご請求金額</div>' +
+        '<div style="background:#F5F5F5;border-radius:8px;padding:12px;text-align:center;margin-bottom:16px;">' +
+          '<div style="font-size:11px;color:#666;">ご請求金額</div>' +
           '<div style="font-size:22px;font-weight:bold;">¥' + Number(inv.total).toLocaleString() + '</div>' +
         '</div>' +
         '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;">' +
-          '<thead><tr style="background:#F57C00;color:#fff;">' +
+          '<thead><tr style="background:#333;color:#fff;">' +
             '<th style="padding:6px 8px;text-align:left;">納品日</th>' +
             '<th style="padding:6px 8px;text-align:left;">品目</th>' +
             '<th style="padding:6px 8px;text-align:center;">数量</th>' +
@@ -1266,7 +1266,7 @@ var InvoiceApp = (function () {
         '<div style="text-align:right;font-size:13px;margin-bottom:16px;">' +
           '<div>小計: ¥' + Number(inv.subtotal).toLocaleString() + '</div>' +
           '<div>消費税額合計: ' + taxLabel + '</div>' +
-          '<div style="font-size:16px;font-weight:bold;border-top:2px solid #F57C00;padding-top:4px;margin-top:4px;">合計: ¥' + Number(inv.total).toLocaleString() + '</div>' +
+          '<div style="font-size:16px;font-weight:bold;border-top:2px solid #333;padding-top:4px;margin-top:4px;">合計: ¥' + Number(inv.total).toLocaleString() + '</div>' +
         '</div>' +
         (profile.bankInfo ? '<div style="border-top:1px solid #ddd;padding-top:8px;margin-bottom:8px;"><div style="font-size:11px;font-weight:bold;color:#888;">振込先</div><div style="font-size:12px;">' + escapeHtml(profile.bankInfo) + '</div></div>' : '') +
         (inv.notes ? '<div style="border-top:1px solid #ddd;padding-top:8px;"><div style="font-size:11px;font-weight:bold;color:#888;">備考</div><div style="font-size:12px;">' + escapeHtml(inv.notes) + '</div></div>' : '') +

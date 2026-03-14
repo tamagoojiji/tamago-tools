@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>かんたん家計簿 - たまごツール</title>
-  <link rel="stylesheet" href="../../style.css?v=10">
+  <link rel="stylesheet" href="../../style.css?v=11">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#F5A623">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -108,6 +108,20 @@
       padding: 8px 10px;
       font-size: 13px;
     }
+    .item-price-wrap {
+      flex: 2;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .item-price-wrap .form-input {
+      flex: 1;
+    }
+    .item-price-unit {
+      font-size: 12px;
+      color: var(--text-light);
+      flex-shrink: 0;
+    }
 
     /* 月ナビ */
     .month-nav {
@@ -136,6 +150,118 @@
       color: var(--secondary);
       min-width: 120px;
       text-align: center;
+      cursor: pointer;
+    }
+
+    /* 月選択ピッカー */
+    .month-picker-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 250;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .month-picker-overlay.hidden { display: none; }
+    .month-picker-sheet {
+      background: #fff;
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-width: 480px;
+      max-height: 60vh;
+      overflow-y: auto;
+      padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+      animation: slideUp 0.25s ease-out;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .month-picker-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .month-picker-year {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--secondary);
+    }
+    .month-picker-year-nav {
+      background: none;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      width: 32px; height: 32px;
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--text-light);
+    }
+    .month-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .month-picker-btn {
+      padding: 12px 4px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .month-picker-btn.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .month-picker-btn:hover {
+      border-color: var(--primary);
+    }
+
+    /* スワイプ削除 */
+    .swipe-container {
+      position: relative;
+      overflow: hidden;
+      border-radius: 16px;
+      margin-bottom: 8px;
+    }
+    .swipe-delete-bg {
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      width: 80px;
+      background: var(--danger);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      border-radius: 0 16px 16px 0;
+    }
+    .swipe-content {
+      position: relative;
+      z-index: 1;
+      background: var(--card-bg);
+      transition: transform 0.2s ease;
+    }
+    .swipe-content.swiping {
+      transition: none;
+    }
+
+    /* 予算入力の円単位 */
+    .budget-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .budget-input-wrap .form-input {
+      flex: 1;
+    }
+    .budget-unit {
+      font-size: 13px;
+      color: var(--text-light);
+      flex-shrink: 0;
     }
     .month-total {
       text-align: center;
@@ -308,6 +434,18 @@
     <img id="viewer-image" src="" alt="レシート画像">
   </div>
 
+  <!-- 月選択ピッカー -->
+  <div id="month-picker" class="month-picker-overlay hidden" onclick="KakeiboApp.closeMonthPicker(event)">
+    <div class="month-picker-sheet" onclick="event.stopPropagation()">
+      <div class="month-picker-header">
+        <button class="month-picker-year-nav" onclick="KakeiboApp.pickerChangeYear(-1)">&lt;</button>
+        <span class="month-picker-year" id="picker-year"></span>
+        <button class="month-picker-year-nav" onclick="KakeiboApp.pickerChangeYear(1)">&gt;</button>
+      </div>
+      <div class="month-picker-grid" id="picker-months"></div>
+    </div>
+  </div>
+
   <!-- メイン画面 -->
   <div id="main-screen" data-screen>
     <div class="container main-container">
@@ -405,7 +543,7 @@
 
         <div class="month-nav">
           <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('history',-1)">&lt;</button>
-          <span class="month-nav-label" id="history-month-label"></span>
+          <span class="month-nav-label" id="history-month-label" onclick="KakeiboApp.openMonthPicker('history')"></span>
           <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('history',1)">&gt;</button>
         </div>
         <div class="month-total">合計: <strong id="history-month-total">0円</strong></div>
@@ -416,7 +554,7 @@
       <div id="tab-report" class="tab-content">
         <div class="month-nav">
           <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('report',-1)">&lt;</button>
-          <span class="month-nav-label" id="report-month-label"></span>
+          <span class="month-nav-label" id="report-month-label" onclick="KakeiboApp.openMonthPicker('report')"></span>
           <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('report',1)">&gt;</button>
         </div>
         <div id="report-content"></div>
@@ -429,16 +567,16 @@
           <div class="settings-section-title">💰 月間予算</div>
           <div class="month-nav" style="margin-bottom:12px">
             <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('settings',-1)">&lt;</button>
-            <span class="month-nav-label" id="settings-month-label"></span>
+            <span class="month-nav-label" id="settings-month-label" onclick="KakeiboApp.openMonthPicker('settings')"></span>
             <button class="month-nav-btn" onclick="KakeiboApp.changeMonth('settings',1)">&gt;</button>
           </div>
           <div id="budget-list"></div>
           <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="KakeiboApp.saveBudgets()">予算を保存</button>
         </div>
 
-        <!-- 動作モード -->
+        <!-- アカウント管理 -->
         <div class="settings-section">
-          <div class="settings-section-title">📋 動作モード</div>
+          <div class="settings-section-title">👤 アカウント管理</div>
           <div id="current-mode-display"></div>
           <button class="settings-btn" id="btn-set-backup-email" style="display:none" onclick="KakeiboApp.setBackupEmail()">バックアップ設定（メアド+PIN）</button>
           <button class="settings-btn" id="btn-restore-from-email" style="display:none" onclick="KakeiboApp.restoreFromEmail()">メアド+PINでバックアップ復元</button>
@@ -450,7 +588,13 @@
         <div class="settings-section">
           <div class="settings-section-title">📂 データ管理</div>
           <button class="settings-btn" onclick="KakeiboApp.exportData(false)">JSONバックアップ</button>
+          <div style="font-size:11px;color:var(--text-light);line-height:1.6;margin:-4px 0 10px 0;padding:0 4px">
+            全ての取引データをJSON形式でファイルに書き出します。<br>端末の変更やデータ消失時に、このファイルから復元できます。
+          </div>
           <button class="settings-btn" onclick="KakeiboApp.exportData(true)">JSONバックアップ（画像付き）</button>
+          <div style="font-size:11px;color:var(--text-light);line-height:1.6;margin:-4px 0 10px 0;padding:0 4px">
+            取引データに加え、レシート画像も含めて書き出します。<br>ファイルサイズが大きくなりますが、画像も復元できます。
+          </div>
           <button class="settings-btn" onclick="KakeiboApp.exportCSV()">CSVエクスポート</button>
           <button class="settings-btn" onclick="KakeiboApp.importData()">バックアップから復元</button>
           <button class="settings-btn danger" onclick="KakeiboApp.clearAllData()">全データ削除</button>
@@ -462,13 +606,10 @@
           <div class="privacy-note">
             <strong>データはスマホ内に保存</strong><br>
             家計データはブラウザ内（IndexedDB）に保存され、外部サーバーには送信されません。<br><br>
-            <strong>レシート撮影時のみ通信</strong><br>
-            レシート画像はAI読み取りのために一時的に送信されますが、処理後すぐに破棄されます。<br><br>
-            <strong>電子帳簿保存法対応</strong><br>
-            レシート画像の原本保存、変更履歴の記録、取引先・日付・金額での検索に対応しています。<br><br>
             <strong>バックアップのお願い</strong><br>
-            ブラウザのキャッシュクリアでデータが消える可能性があります。定期的に「画像付きバックアップ」をお取りください。
+            ブラウザのキャッシュクリアでデータが消える可能性があります。定期的にバックアップをお取りください。
           </div>
+          <a href="../../privacy.html" target="_blank" style="display:block;text-align:center;margin-top:12px;font-size:13px;font-weight:600;color:var(--primary);text-decoration:underline">プライバシーポリシー</a>
         </div>
 
         <!-- フッター -->
@@ -589,7 +730,9 @@
           <div>
             <div style="font-size:16px;font-weight:700;color:var(--secondary);margin-bottom:4px">個人用モード</div>
             <div style="font-size:12px;color:var(--text-light);line-height:1.7">
-              家庭の家計管理向け。データはスマホ内に保存されます。
+              家庭の家計管理向け。<br>
+              データはスマホ内に保存され、外部サーバーには送信されません。<br>
+              シンプルに家計を記録・管理したい方におすすめです。
             </div>
           </div>
         </div>
@@ -617,11 +760,17 @@
           <div>
             <div style="font-size:16px;font-weight:700;color:var(--secondary);margin-bottom:4px">事業用モード</div>
             <div style="font-size:12px;color:var(--text-light);line-height:1.7">
-              個人事業主・確定申告向け。<br>
+              個人事業主・フリーランス・確定申告向け。<br>
               全データが<strong>クラウドにリアルタイム同期</strong>されます。<br>
-              レシート画像・変更履歴もサーバー保存。<br>
-              <strong>電子帳簿保存法に対応</strong>しています。
+              レシート画像・変更履歴もサーバー保存。
             </div>
+          </div>
+        </div>
+        <div style="background:#E8F5E9;border-radius:10px;padding:10px 12px;margin-bottom:12px">
+          <div style="font-size:12px;font-weight:700;color:#2E7D32;margin-bottom:4px">電子帳簿保存法対応</div>
+          <div style="font-size:11px;color:#666;line-height:1.7">
+            レシート画像の原本保存、変更履歴の自動記録、取引先・日付・金額での検索に対応。<br>
+            確定申告に必要な帳簿要件を満たします。
           </div>
         </div>
         <button class="btn btn-outline" style="width:100%" onclick="KakeiboApp.selectMode('business')">事業用モードで始める</button>
@@ -724,22 +873,22 @@
     </div>
   </div>
 
-  <script src="../../shared/form-utils.js?v=10"></script>
-  <script src="db.js?v=10"></script>
-  <script src="chart.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="../../shared/form-utils.js?v=11"></script>
+  <script src="db.js?v=11"></script>
+  <script src="chart.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 
   <!-- Service Worker 登録 -->
   <script>
     if ("serviceWorker" in navigator) {
       caches.keys().then(function(names) {
         names.forEach(function(name) {
-          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v10") {
+          if (name.indexOf("kakeibo") !== -1 && name !== "kakeibo-v11") {
             caches.delete(name);
           }
         });
       });
-      navigator.serviceWorker.register("sw.js?v=10").catch(function () {});
+      navigator.serviceWorker.register("sw.js?v=11").catch(function () {});
     }
   </script>
 </body>

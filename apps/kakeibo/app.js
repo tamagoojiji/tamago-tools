@@ -32,6 +32,26 @@ var KakeiboApp = (function () {
     "子ども": "👶", "ペット": "🐶", "車両費": "🚗", "その他": "📦"
   };
 
+  // 勘定科目マッピング（事業用モード）
+  var ACCOUNT_MAP = {
+    "食費": "福利厚生費 / 会議費",
+    "日用品": "消耗品費",
+    "交通費": "旅費交通費",
+    "住居費": "地代家賃",
+    "水道光熱費": "水道光熱費",
+    "通信費": "通信費",
+    "保険": "保険料",
+    "医療費": "福利厚生費",
+    "教育費": "研修費 / 新聞図書費",
+    "趣味・娯楽": "福利厚生費 / 雑費",
+    "衣服・美容": "福利厚生費",
+    "交際費": "接待交際費",
+    "子ども": "福利厚生費",
+    "ペット": "雑費",
+    "車両費": "車両費 / 旅費交通費",
+    "その他": "雑費"
+  };
+
   // === 初期化 ===
   function init() {
     try {
@@ -381,13 +401,19 @@ var KakeiboApp = (function () {
     nameInput.value = name || "";
     nameInput.style.flex = "3";
 
+    var priceWrap = document.createElement("div");
+    priceWrap.className = "item-price-wrap";
     var priceInput = document.createElement("input");
     priceInput.type = "number";
     priceInput.className = "form-input item-price";
     priceInput.placeholder = "金額";
     priceInput.value = price || "";
-    priceInput.style.flex = "2";
     priceInput.addEventListener("input", recalcTotal);
+    var priceUnit = document.createElement("span");
+    priceUnit.className = "item-price-unit";
+    priceUnit.textContent = "円";
+    priceWrap.appendChild(priceInput);
+    priceWrap.appendChild(priceUnit);
 
     var qtyInput = document.createElement("input");
     qtyInput.type = "number";
@@ -408,7 +434,7 @@ var KakeiboApp = (function () {
     });
 
     row.appendChild(nameInput);
-    row.appendChild(priceInput);
+    row.appendChild(priceWrap);
     row.appendChild(qtyInput);
     row.appendChild(delBtn);
     itemsEl.appendChild(row);
@@ -588,7 +614,10 @@ var KakeiboApp = (function () {
         var icon = CATEGORY_ICONS[tx.category] || "📦";
         var color = safeGetColor(tx.category);
         var imgBadge = tx.hasImage ? '<span style="font-size:10px;margin-left:4px">📷</span>' : '';
-        html += '<div class="data-card" data-id="' + tx.id + '" onclick="KakeiboApp.openDetail(\'' + tx.id + '\')">' +
+        html += '<div class="swipe-container" data-swipe-id="' + tx.id + '">' +
+          '<div class="swipe-delete-bg">削除</div>' +
+          '<div class="swipe-content">' +
+          '<div class="data-card" style="margin-bottom:0" data-id="' + tx.id + '" onclick="KakeiboApp.openDetail(\'' + tx.id + '\')">' +
           '<div class="data-card-icon" style="background:' + color + '20">' + icon + '</div>' +
           '<div class="data-card-body">' +
             '<div class="data-card-title">' + escapeHtml(tx.memo || tx.store || tx.category) + imgBadge + '</div>' +
@@ -597,13 +626,85 @@ var KakeiboApp = (function () {
           '<div class="data-card-right">' +
             '<div class="data-card-amount">' + tx.total.toLocaleString() + '円</div>' +
           '</div>' +
-        '</div>';
+          '</div></div></div>';
       }
 
       container.innerHTML = html;
+      setupSwipeDelete();
       document.getElementById("history-month-total").textContent = total.toLocaleString() + "円";
     }).catch(function (err) {
       console.error("履歴読み込みエラー:", err);
+    });
+  }
+
+  // === スワイプ削除 ===
+  function setupSwipeDelete() {
+    var containers = document.querySelectorAll(".swipe-container");
+    for (var i = 0; i < containers.length; i++) {
+      (function (container) {
+        var content = container.querySelector(".swipe-content");
+        var startX = 0;
+        var currentX = 0;
+        var isSwiping = false;
+        var threshold = 80;
+
+        content.addEventListener("touchstart", function (e) {
+          startX = e.touches[0].clientX;
+          currentX = 0;
+          isSwiping = true;
+          content.classList.add("swiping");
+        }, { passive: true });
+
+        content.addEventListener("touchmove", function (e) {
+          if (!isSwiping) return;
+          var diff = e.touches[0].clientX - startX;
+          currentX = Math.min(0, Math.max(-threshold, diff));
+          content.style.transform = "translateX(" + currentX + "px)";
+        }, { passive: true });
+
+        content.addEventListener("touchend", function () {
+          isSwiping = false;
+          content.classList.remove("swiping");
+          if (currentX <= -threshold) {
+            // スワイプ完了 → 削除確認
+            content.style.transform = "translateX(-" + threshold + "px)";
+            var txId = container.dataset.swipeId;
+            if (confirm("この記録を削除しますか？")) {
+              swipeDeleteTransaction(txId);
+            } else {
+              content.style.transform = "translateX(0)";
+            }
+          } else {
+            content.style.transform = "translateX(0)";
+          }
+        });
+      })(containers[i]);
+    }
+  }
+
+  function swipeDeleteTransaction(txId) {
+    KakeiboDB.getTransaction(txId).then(function (tx) {
+      return KakeiboDB.addAuditLog({
+        transactionId: txId,
+        action: "delete",
+        snapshot: tx ? JSON.parse(JSON.stringify(tx)) : null
+      });
+    }).then(function () {
+      return KakeiboDB.deleteTransaction(txId);
+    }).then(function () {
+      return KakeiboDB.deleteImage(txId);
+    }).then(function () {
+      if (businessMode) {
+        return syncToGas("kakeibo_delete", { transactionId: txId });
+      }
+      return autoBackup();
+    }).then(function () {
+      FormUtils.showToast("削除しました");
+      loadHistory();
+      loadTodayTotal();
+    }).catch(function (err) {
+      console.error("削除エラー:", err);
+      FormUtils.showToast("削除に失敗しました");
     });
   }
 
@@ -881,17 +982,37 @@ var KakeiboApp = (function () {
           '<div class="section-title" style="margin-top:24px">累計推移</div>' +
           '<canvas id="chart-line"></canvas>';
 
+        // カテゴリ別の予算マップ作成
+        var budgetMap = {};
+        for (var bm = 0; bm < budgets.length; bm++) {
+          budgetMap[budgets[bm].category] = budgets[bm].amount;
+        }
+
         var breakdownHtml = '<div class="section-title" style="margin-top:24px">内訳</div>';
         for (var c = 0; c < categoryData.length; c++) {
           var cd = categoryData[c];
           var cdIcon = CATEGORY_ICONS[cd.category] || "📦";
           var pctCat = Math.round(cd.total / total * 100);
+          var catBudget = budgetMap[cd.category] || 0;
+          var budgetInfo = "";
+          if (catBudget > 0) {
+            var catRemain = catBudget - cd.total;
+            var catPct = Math.round(cd.total / catBudget * 100);
+            var catColor = catRemain < 0 ? "var(--danger)" : catPct > 80 ? "#FF9F40" : "var(--text-light)";
+            budgetInfo = '<div style="font-size:10px;color:' + catColor + ';text-align:right">' +
+              '予算 ' + catBudget.toLocaleString() + '円 / 残 ' + catRemain.toLocaleString() + '円 (' + catPct + '%)' +
+            '</div>';
+          }
+          var accountInfo = "";
+          if (businessMode && ACCOUNT_MAP[cd.category]) {
+            accountInfo = '<div style="font-size:10px;color:#888;margin-left:32px;margin-bottom:2px">勘定科目: ' + ACCOUNT_MAP[cd.category] + '</div>';
+          }
           breakdownHtml +=
             '<div class="bar-row">' +
               '<div class="bar-label">' + cdIcon + '</div>' +
               '<div class="bar-track"><div class="bar-fill" style="width:' + pctCat + '%;background:' + safeGetColor(cd.category) + '"></div></div>' +
               '<div class="bar-value">' + cd.total.toLocaleString() + '円</div>' +
-            '</div>';
+            '</div>' + accountInfo + budgetInfo;
         }
 
         document.getElementById("report-content").innerHTML = statsHtml + budgetHtml + chartHtml + breakdownHtml;
@@ -930,7 +1051,10 @@ var KakeiboApp = (function () {
             '<span style="font-size:13px">' + (CATEGORY_ICONS[cat] || "") + " " + cat + '</span>' +
           '</div>' +
           '<div class="form-group" style="flex:1;margin-bottom:0">' +
-            '<input type="number" class="form-input budget-input" data-category="' + cat + '" placeholder="0" value="' + (budgetMap[cat] || "") + '" style="padding:8px;font-size:13px;text-align:right">' +
+            '<div class="budget-input-wrap">' +
+              '<input type="number" class="form-input budget-input" data-category="' + cat + '" placeholder="0" value="' + (budgetMap[cat] || "") + '" style="padding:8px;font-size:13px;text-align:right">' +
+              '<span class="budget-unit">円</span>' +
+            '</div>' +
           '</div>';
         container.appendChild(row);
       }
@@ -1065,6 +1189,51 @@ var KakeiboApp = (function () {
     if (section === "history") loadHistory();
     if (section === "report") loadReport();
     if (section === "settings") loadSettings();
+  }
+
+  // === 月選択ピッカー ===
+  var pickerYear = null;
+  var pickerTarget = null;
+
+  function openMonthPicker(section) {
+    pickerTarget = section;
+    var parts = currentMonth.split("-");
+    pickerYear = parseInt(parts[0]);
+    renderMonthPicker();
+    document.getElementById("month-picker").classList.remove("hidden");
+  }
+
+  function closeMonthPicker(e) {
+    if (!e || e.target.id === "month-picker") {
+      document.getElementById("month-picker").classList.add("hidden");
+    }
+  }
+
+  function pickerChangeYear(delta) {
+    pickerYear += delta;
+    renderMonthPicker();
+  }
+
+  function renderMonthPicker() {
+    document.getElementById("picker-year").textContent = pickerYear + "年";
+    var grid = document.getElementById("picker-months");
+    var html = "";
+    var currentParts = currentMonth.split("-");
+    var currentY = parseInt(currentParts[0]);
+    var currentM = parseInt(currentParts[1]);
+    for (var m = 1; m <= 12; m++) {
+      var isActive = (pickerYear === currentY && m === currentM);
+      html += '<button class="month-picker-btn' + (isActive ? ' active' : '') + '" onclick="KakeiboApp.selectMonth(' + m + ')">' + m + '月</button>';
+    }
+    grid.innerHTML = html;
+  }
+
+  function selectMonth(m) {
+    currentMonth = pickerYear + "-" + padZero(m);
+    closeMonthPicker();
+    if (pickerTarget === "history") loadHistory();
+    if (pickerTarget === "report") loadReport();
+    if (pickerTarget === "settings") loadSettings();
   }
 
   // === ユーティリティ ===
@@ -1530,7 +1699,11 @@ var KakeiboApp = (function () {
     saveBackupSettings: saveBackupSettings,
     showPinReset: showPinReset,
     requestPinReset: requestPinReset,
-    executePinReset: executePinReset
+    executePinReset: executePinReset,
+    openMonthPicker: openMonthPicker,
+    closeMonthPicker: closeMonthPicker,
+    pickerChangeYear: pickerChangeYear,
+    selectMonth: selectMonth
   };
 })();
 

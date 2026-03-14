@@ -13,6 +13,7 @@ var InvoiceApp = (function () {
   var STORAGE_KEY_MIGRATED = "";
 
   var GAS_URL = "https://script.google.com/macros/s/AKfycbyQEYHQP1Ckyh58CC2xcIxIzKukX-PEOXgoqkKiAzPBaV3Io1avF1o1kVT3wRgTHEl7eA/exec";
+  var API_KEY = "f483df285fb18aec408865039230d05cce79507f0aeacc9e";
 
   function initStorageKeys() {
     scopeId = FormUtils.getUserId();
@@ -109,7 +110,7 @@ var InvoiceApp = (function () {
     var hasFailed = false;
     var expectedCount = 0;
     // GASから既存データをインポート（ローカルデータとマージ）
-    return fetch(GAS_URL + "?action=list&userId=" + encodeURIComponent(scopeId))
+    return fetch(GAS_URL + "?action=list&userId=" + encodeURIComponent(scopeId) + "&apiKey=" + API_KEY)
       .then(function (r) { return r.json(); })
       .then(function (res) {
         if (!res.ok) {
@@ -119,7 +120,7 @@ var InvoiceApp = (function () {
         if (res.invoices && res.invoices.length > 0) {
           expectedCount = res.invoices.length;
           var promises = res.invoices.map(function (inv) {
-            return fetch(GAS_URL + "?action=get&userId=" + encodeURIComponent(scopeId) + "&id=" + encodeURIComponent(inv.id))
+            return fetch(GAS_URL + "?action=get&userId=" + encodeURIComponent(scopeId) + "&id=" + encodeURIComponent(inv.id) + "&apiKey=" + API_KEY)
               .then(function (r) { return r.json(); })
               .then(function (detail) {
                 if (detail.ok && detail.invoice) return detail.invoice;
@@ -172,7 +173,7 @@ var InvoiceApp = (function () {
             localStorage.setItem(STORAGE_KEY_NEXT_SEQ + ":" + ym, String(maxSeq + 1));
           }
         }
-        return fetch(GAS_URL + "?action=profile&userId=" + encodeURIComponent(scopeId));
+        return fetch(GAS_URL + "?action=profile&userId=" + encodeURIComponent(scopeId) + "&apiKey=" + API_KEY);
       })
       .then(function (r) { return r.json(); })
       .then(function (res) {

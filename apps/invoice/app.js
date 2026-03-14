@@ -19,6 +19,7 @@ var InvoiceApp = (function () {
     scopeId = FormUtils.getUserId();
     STORAGE_KEY_INVOICES = "invoice_invoices:" + scopeId;
     STORAGE_KEY_PROFILE = "invoice_profile:" + scopeId;
+    initAuditKey();
     STORAGE_KEY_NEXT_SEQ = "invoice_next_seq:" + scopeId;
     STORAGE_KEY_MIGRATED = "invoice_migrated:" + scopeId;
   }
@@ -30,8 +31,24 @@ var InvoiceApp = (function () {
   var itemCounter = 0;
 
   // === localStorage ヘルパー ===
-  // TODO: Step 3 で Web Crypto API AES-256 暗号化を追加し、平文保存を解消する
+  var STORAGE_KEY_AUDIT = "";
+
+  function initAuditKey() {
+    STORAGE_KEY_AUDIT = "invoice_audit_log:" + scopeId;
+  }
+
   function getInvoicesFromStorage() {
+    try {
+      var data = localStorage.getItem(STORAGE_KEY_INVOICES);
+      var all = data ? JSON.parse(data) : [];
+      // 論理削除されたものを除外
+      return all.filter(function (inv) { return !inv.deleted; });
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function getAllInvoicesRaw() {
     try {
       var data = localStorage.getItem(STORAGE_KEY_INVOICES);
       return data ? JSON.parse(data) : [];
@@ -55,6 +72,35 @@ var InvoiceApp = (function () {
 
   function saveProfileToStorage(profile) {
     localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
+  }
+
+  // === 監査ログ ===
+  function addAuditLog(entry) {
+    try {
+      var logs = JSON.parse(localStorage.getItem(STORAGE_KEY_AUDIT) || "[]");
+      logs.push({
+        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 4),
+        invoiceId: entry.invoiceId || "",
+        action: entry.action || "",
+        snapshot: entry.snapshot || null,
+        timestamp: new Date().toISOString()
+      });
+      localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(logs));
+    } catch (e) {
+      console.error("監査ログ保存エラー:", e);
+    }
+  }
+
+  function getAuditLogs(invoiceId) {
+    try {
+      var logs = JSON.parse(localStorage.getItem(STORAGE_KEY_AUDIT) || "[]");
+      if (invoiceId) {
+        return logs.filter(function (l) { return l.invoiceId === invoiceId; });
+      }
+      return logs;
+    } catch (e) {
+      return [];
+    }
   }
 
   function generateInvoiceNumber() {
@@ -146,7 +192,7 @@ var InvoiceApp = (function () {
             if (!valid[i].status) valid[i].status = "draft";
           }
           // ローカル既存データとマージ（IDが重複しないもののみ追加）
-          var existing = getInvoicesFromStorage();
+          var existing = getAllInvoicesRaw();
           var existingIds = {};
           for (var e = 0; e < existing.length; e++) {
             existingIds[existing[e].id] = true;
@@ -500,13 +546,19 @@ var InvoiceApp = (function () {
   }
 
   function saveInvoiceToLocal(data) {
-    var invoices = getInvoicesFromStorage();
+    var invoices = getAllInvoicesRaw();
     var now = new Date().toISOString();
 
     if (data.id) {
       // 既存の更新
       for (var i = 0; i < invoices.length; i++) {
-        if (invoices[i].id === data.id) {
+        if (invoices[i].id === data.id && !invoices[i].deleted) {
+          // 監査ログ: 変更前のスナップショットを記録
+          addAuditLog({
+            invoiceId: data.id,
+            action: "update",
+            snapshot: JSON.parse(JSON.stringify(invoices[i]))
+          });
           data.invoiceNumber = invoices[i].invoiceNumber;
           data.updatedAt = now;
           data.createdAt = invoices[i].createdAt;
@@ -525,6 +577,14 @@ var InvoiceApp = (function () {
     invoices.push(data);
     saveInvoicesToStorage(invoices);
     editingInvoiceId = data.id;
+
+    // 監査ログ: 作成記録
+    addAuditLog({
+      invoiceId: data.id,
+      action: "create",
+      snapshot: JSON.parse(JSON.stringify(data))
+    });
+
     return data;
   }
 
@@ -651,9 +711,15 @@ var InvoiceApp = (function () {
     if (!currentInvoice) return;
     var nextStatus = currentInvoice.status === "draft" ? "sent" : currentInvoice.status === "sent" ? "paid" : "draft";
 
-    var invoices = getInvoicesFromStorage();
+    var invoices = getAllInvoicesRaw();
     for (var i = 0; i < invoices.length; i++) {
-      if (invoices[i].id === currentInvoice.id) {
+      if (invoices[i].id === currentInvoice.id && !invoices[i].deleted) {
+        // 監査ログ: ステータス変更を記録
+        addAuditLog({
+          invoiceId: currentInvoice.id,
+          action: "status_change",
+          snapshot: { from: invoices[i].status, to: nextStatus }
+        });
         invoices[i].status = nextStatus;
         invoices[i].updatedAt = new Date().toISOString();
         saveInvoicesToStorage(invoices);
@@ -820,15 +886,25 @@ var InvoiceApp = (function () {
     FormUtils.showScreen("create-screen");
   }
 
-  // === 削除 ===
+  // === 削除（論理削除） ===
   function deleteInvoice() {
     if (!currentInvoice) return;
     if (!confirm("この請求書を削除しますか？")) return;
 
-    var invoices = getInvoicesFromStorage();
-    invoices = invoices.filter(function (inv) {
-      return inv.id !== currentInvoice.id;
-    });
+    var invoices = getAllInvoicesRaw();
+    for (var i = 0; i < invoices.length; i++) {
+      if (invoices[i].id === currentInvoice.id) {
+        // 監査ログ: 削除前のスナップショットを記録
+        addAuditLog({
+          invoiceId: currentInvoice.id,
+          action: "delete",
+          snapshot: JSON.parse(JSON.stringify(invoices[i]))
+        });
+        invoices[i].deleted = true;
+        invoices[i].deletedAt = new Date().toISOString();
+        break;
+      }
+    }
     saveInvoicesToStorage(invoices);
     FormUtils.showToast("削除しました");
     backToMain();

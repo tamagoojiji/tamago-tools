@@ -296,6 +296,22 @@
 </head>
 <body>
 
+  <!-- ロック画面（暗号化有効時） -->
+  <div id="lock-screen" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:linear-gradient(135deg,#FFF8E1,#FFF3E0);display:flex;align-items:center;justify-content:center">
+    <div style="width:90%;max-width:360px;text-align:center">
+      <div style="font-size:56px;margin-bottom:16px">🔐</div>
+      <h2 style="font-size:20px;font-weight:800;color:var(--secondary);margin-bottom:8px">データはロックされています</h2>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:24px">暗号化パスフレーズを入力してください</p>
+      <div style="background:var(--card-bg);border-radius:16px;padding:20px;box-shadow:var(--shadow)">
+        <input type="password" id="lock-passphrase" class="form-input" placeholder="パスフレーズ" style="padding:12px;font-size:15px;margin-bottom:12px">
+        <div id="lock-error" class="hidden" style="color:var(--danger);font-size:12px;margin-bottom:8px"></div>
+        <button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px" onclick="InvoiceApp.unlockApp()">ロック解除</button>
+      </div>
+      <p style="font-size:11px;color:var(--text-light);margin-top:16px;line-height:1.6">パスフレーズを忘れた場合は、<br>バックアップから復元できます（暗号化は解除されます）</p>
+      <button style="background:none;border:none;color:var(--primary);font-size:13px;margin-top:8px;cursor:pointer;text-decoration:underline" onclick="InvoiceApp.emergencyRestore()">バックアップ復元（暗号化解除）</button>
+    </div>
+  </div>
+
   <!-- スピナー -->
   <div id="spinner" class="spinner-overlay hidden">
     <div class="spinner"></div>
@@ -319,7 +335,12 @@
         <div style="font-size:14px;font-weight:700;color:var(--secondary);margin-bottom:10px">🔒 バックアップ</div>
         <div id="backup-status"></div>
         <button class="btn btn-outline" onclick="InvoiceApp.showBackupSettings()" style="width:100%;margin-bottom:8px;padding:10px;font-size:13px">バックアップ設定（メアド+PIN）</button>
-        <button class="btn btn-outline" onclick="InvoiceApp.restoreFromBackup()" style="width:100%;padding:10px;font-size:13px">メアド+PINでバックアップ復元</button>
+        <button class="btn btn-outline" onclick="InvoiceApp.restoreFromBackup()" style="width:100%;margin-bottom:8px;padding:10px;font-size:13px">メアド+PINでバックアップ復元</button>
+        <div id="encryption-section" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:700;color:var(--secondary);margin-bottom:8px">🛡️ 端末暗号化</div>
+          <div id="encryption-status" style="font-size:12px;color:var(--text-light);margin-bottom:8px"></div>
+          <button class="btn btn-outline" onclick="InvoiceApp.showEncryptionSettings()" style="width:100%;padding:10px;font-size:13px">暗号化設定</button>
+        </div>
       </div>
     </div>
   </div>
@@ -671,6 +692,42 @@
           <input type="tel" id="inv-pin-reset-new-pin" class="form-input" placeholder="4桁のPIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" style="padding:10px;font-size:14px">
         </div>
         <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="InvoiceApp.executePinReset()">PINをリセット</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 暗号化設定画面 -->
+  <div id="encryption-screen" data-screen class="screen hidden">
+    <div class="container" style="padding-top:32px">
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:48px;margin-bottom:12px">🛡️</div>
+        <h2 style="font-size:20px;font-weight:800;color:var(--secondary)">端末暗号化設定</h2>
+        <p style="font-size:13px;color:var(--text-light);margin-top:8px">AES-256でデータを暗号化します</p>
+      </div>
+      <div style="background:var(--card-bg);border-radius:16px;padding:20px;box-shadow:var(--shadow)">
+        <div id="enc-enable-section">
+          <div class="form-group">
+            <label class="form-label">パスフレーズ（8文字以上）</label>
+            <input type="password" id="enc-passphrase" class="form-input" placeholder="暗号化パスフレーズ" minlength="8" style="padding:10px;font-size:14px">
+          </div>
+          <div class="form-group">
+            <label class="form-label">パスフレーズ（確認）</label>
+            <input type="password" id="enc-passphrase-confirm" class="form-input" placeholder="もう一度入力" style="padding:10px;font-size:14px">
+          </div>
+          <div style="font-size:11px;color:var(--text-light);line-height:1.7;margin-bottom:12px;padding:8px;background:#FFF8E1;border-radius:8px">
+            暗号化を有効にすると、アプリ起動時にパスフレーズの入力が必要になります。<br>
+            パスフレーズを忘れた場合、端末のデータにはアクセスできなくなります（バックアップからの復元は可能です）。
+          </div>
+          <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="InvoiceApp.enableEncryption()">暗号化を有効にする</button>
+        </div>
+        <div id="enc-disable-section" class="hidden">
+          <div style="font-size:14px;color:var(--success);font-weight:700;text-align:center;margin-bottom:12px">✅ 暗号化は有効です</div>
+          <div style="font-size:11px;color:var(--text-light);line-height:1.7;margin-bottom:12px;padding:8px;background:#FFF8E1;border-radius:8px">
+            暗号化を解除すると、データは平文でlocalStorageに保存されます。
+          </div>
+          <button class="btn btn-danger" style="width:100%;margin-bottom:8px;background:var(--danger);color:#fff" onclick="InvoiceApp.disableEncryption()">暗号化を解除する</button>
+        </div>
+        <button class="btn btn-secondary" style="width:100%" onclick="FormUtils.showScreen('main-screen')">戻る</button>
       </div>
     </div>
   </div>

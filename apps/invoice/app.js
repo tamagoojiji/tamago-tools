@@ -39,9 +39,13 @@ var InvoiceApp = (function () {
 
   function getInvoicesFromStorage() {
     try {
+      if (encryptionKey && memCache.invoices !== null) {
+        return memCache.invoices.filter(function (inv) { return !inv.deleted; });
+      }
       var data = localStorage.getItem(STORAGE_KEY_INVOICES);
-      var all = data ? JSON.parse(data) : [];
-      // 論理削除されたものを除外
+      if (!data) return [];
+      if (data.indexOf("ENC:") === 0) return []; // 未復号
+      var all = JSON.parse(data);
       return all.filter(function (inv) { return !inv.deleted; });
     } catch (e) {
       return [];
@@ -50,34 +54,57 @@ var InvoiceApp = (function () {
 
   function getAllInvoicesRaw() {
     try {
+      if (encryptionKey && memCache.invoices !== null) return memCache.invoices;
       var data = localStorage.getItem(STORAGE_KEY_INVOICES);
-      return data ? JSON.parse(data) : [];
+      if (!data) return [];
+      if (data.indexOf("ENC:") === 0) return [];
+      return JSON.parse(data);
     } catch (e) {
       return [];
     }
   }
 
   function saveInvoicesToStorage(invoices) {
-    localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(invoices));
+    if (encryptionKey) {
+      memCache.invoices = invoices;
+      encryptString(JSON.stringify(invoices), encryptionKey).then(function (enc) {
+        localStorage.setItem(STORAGE_KEY_INVOICES, enc);
+      });
+    } else {
+      localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(invoices));
+    }
   }
 
   function getProfileFromStorage() {
     try {
+      if (encryptionKey && memCache.profile !== undefined && memCache.profile !== null) return memCache.profile;
       var data = localStorage.getItem(STORAGE_KEY_PROFILE);
-      return data ? JSON.parse(data) : null;
+      if (!data) return null;
+      if (data.indexOf("ENC:") === 0) return null;
+      return JSON.parse(data);
     } catch (e) {
       return null;
     }
   }
 
   function saveProfileToStorage(profile) {
-    localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
+    if (encryptionKey) {
+      memCache.profile = profile;
+      encryptString(JSON.stringify(profile), encryptionKey).then(function (enc) {
+        localStorage.setItem(STORAGE_KEY_PROFILE, enc);
+      });
+    } else {
+      localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
+    }
   }
 
   // === 監査ログ ===
   function addAuditLog(entry) {
     try {
-      var logs = JSON.parse(localStorage.getItem(STORAGE_KEY_AUDIT) || "[]");
+      var logs = (encryptionKey && memCache.audit) ? memCache.audit : [];
+      if (!encryptionKey) {
+        try { logs = JSON.parse(localStorage.getItem(STORAGE_KEY_AUDIT) || "[]"); } catch (e) { logs = []; }
+      }
       logs.push({
         id: Date.now().toString(36) + Math.random().toString(36).substr(2, 4),
         invoiceId: entry.invoiceId || "",
@@ -85,7 +112,15 @@ var InvoiceApp = (function () {
         snapshot: entry.snapshot || null,
         timestamp: new Date().toISOString()
       });
-      localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(logs));
+      var json = JSON.stringify(logs);
+      if (encryptionKey) {
+        memCache.audit = logs;
+        encryptString(json, encryptionKey).then(function (enc) {
+          localStorage.setItem(STORAGE_KEY_AUDIT, enc);
+        });
+      } else {
+        localStorage.setItem(STORAGE_KEY_AUDIT, json);
+      }
     } catch (e) {
       console.error("監査ログ保存エラー:", e);
     }
@@ -93,7 +128,12 @@ var InvoiceApp = (function () {
 
   function getAuditLogs(invoiceId) {
     try {
-      var logs = JSON.parse(localStorage.getItem(STORAGE_KEY_AUDIT) || "[]");
+      var logs;
+      if (encryptionKey && memCache.audit) {
+        logs = memCache.audit;
+      } else {
+        logs = JSON.parse(localStorage.getItem(STORAGE_KEY_AUDIT) || "[]");
+      }
       if (invoiceId) {
         return logs.filter(function (l) { return l.invoiceId === invoiceId; });
       }
@@ -111,6 +151,99 @@ var InvoiceApp = (function () {
       var hashArray = Array.from(new Uint8Array(buffer));
       return hashArray.map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
     });
+  }
+
+  // === AES-256 暗号化 ===
+  var STORAGE_KEY_ENC_ENABLED = "";
+  var STORAGE_KEY_ENC_SALT = "";
+  var STORAGE_KEY_ENC_VERIFY = "";
+  var encryptionKey = null; // 復号後にメモリに保持
+  // 暗号化時のメモリキャッシュ（localStorageは暗号化のまま維持）
+  var memCache = { invoices: null, profile: null, audit: null };
+
+  function initEncKeys() {
+    STORAGE_KEY_ENC_ENABLED = "invoice_enc_enabled:" + scopeId;
+    STORAGE_KEY_ENC_SALT = "invoice_enc_salt:" + scopeId;
+    STORAGE_KEY_ENC_VERIFY = "invoice_enc_verify:" + scopeId;
+  }
+
+  function isEncryptionEnabled() {
+    return localStorage.getItem(STORAGE_KEY_ENC_ENABLED) === "true";
+  }
+
+  function deriveKey(passphrase, salt) {
+    var enc = new TextEncoder();
+    return crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"])
+      .then(function (baseKey) {
+        return crypto.subtle.deriveKey(
+          { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+          baseKey,
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["encrypt", "decrypt"]
+        );
+      });
+  }
+
+  function encryptString(plaintext, key) {
+    var enc = new TextEncoder();
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, enc.encode(plaintext))
+      .then(function (cipherBuf) {
+        var cipher = new Uint8Array(cipherBuf);
+        var combined = new Uint8Array(iv.length + cipher.length);
+        combined.set(iv);
+        combined.set(cipher, iv.length);
+        // Base64エンコード
+        var binary = "";
+        for (var i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
+        return "ENC:" + btoa(binary);
+      });
+  }
+
+  function decryptString(encoded, key) {
+    if (!encoded || encoded.indexOf("ENC:") !== 0) return Promise.resolve(encoded);
+    var binary = atob(encoded.substr(4));
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    var iv = bytes.slice(0, 12);
+    var cipher = bytes.slice(12);
+    return crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, cipher)
+      .then(function (plainBuf) {
+        return new TextDecoder().decode(plainBuf);
+      });
+  }
+
+  function hexToBytes(hex) {
+    var bytes = new Uint8Array(hex.length / 2);
+    for (var i = 0; i < hex.length; i += 2) bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+    return bytes;
+  }
+
+  function bytesToHex(bytes) {
+    var hex = "";
+    for (var i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, "0");
+    return hex;
+  }
+
+  // 暗号化対応のlocalStorage読み書き
+  function secureGetItem(key) {
+    var raw = localStorage.getItem(key);
+    if (!raw) return Promise.resolve(null);
+    if (encryptionKey && raw.indexOf("ENC:") === 0) {
+      return decryptString(raw, encryptionKey);
+    }
+    return Promise.resolve(raw);
+  }
+
+  function secureSetItem(key, value) {
+    if (encryptionKey) {
+      return encryptString(value, encryptionKey).then(function (enc) {
+        localStorage.setItem(key, enc);
+      });
+    }
+    localStorage.setItem(key, value);
+    return Promise.resolve();
   }
 
   // === バックアップ設定 ===
@@ -224,18 +357,28 @@ var InvoiceApp = (function () {
         return;
       }
       var backup = JSON.parse(res.data);
-      if (backup.invoices) saveInvoicesToStorage(backup.invoices);
-      if (backup.profile) saveProfileToStorage(backup.profile);
+      // 暗号化を解除（復元時はクリーンな状態にする）
+      if (isEncryptionEnabled()) {
+        localStorage.removeItem(STORAGE_KEY_ENC_ENABLED);
+        localStorage.removeItem(STORAGE_KEY_ENC_SALT);
+        localStorage.removeItem(STORAGE_KEY_ENC_VERIFY);
+        encryptionKey = null;
+        memCache = { invoices: null, profile: null, audit: null };
+      }
+      // 平文で保存（暗号化解除済み）
+      if (backup.invoices) localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(backup.invoices));
+      if (backup.profile) localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(backup.profile));
       if (backup.auditLog) localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(backup.auditLog));
       backupEmail = email;
       backupPin = pin;
       localStorage.setItem(STORAGE_KEY_BACKUP_EMAIL, email);
       localStorage.setItem(STORAGE_KEY_BACKUP_PIN, pin);
-      FormUtils.showToast("復元しました");
+      FormUtils.showToast("復元しました（暗号化は解除されました）");
       FormUtils.showScreen("main-screen");
       loadInvoices();
       loadProfile();
       updateBackupDisplay();
+      updateEncryptionDisplay();
     }).catch(function (err) {
       hideSpinner();
       FormUtils.showToast("復元に失敗しました: " + err.message);
@@ -334,12 +477,97 @@ var InvoiceApp = (function () {
   // === 初期化 ===
   function init() {
     initStorageKeys();
+    initEncKeys();
     initBackupKeys();
+
+    // 暗号化が有効な場合、ロック画面を表示
+    if (isEncryptionEnabled()) {
+      var lockScreen = document.getElementById("lock-screen");
+      if (lockScreen) {
+        lockScreen.classList.remove("hidden");
+        lockScreen.style.display = "flex";
+      }
+      // ロック解除後にinitAfterUnlockが呼ばれる
+      return;
+    }
+
+    initAfterUnlock();
+  }
+
+  function initAfterUnlock() {
     migrateFromGas().then(function () {
       loadInvoices();
       loadProfile();
       updateBackupDisplay();
+      updateEncryptionDisplay();
     });
+  }
+
+  function unlockApp() {
+    var input = document.getElementById("lock-passphrase");
+    var errorEl = document.getElementById("lock-error");
+    var passphrase = input ? input.value : "";
+    if (!passphrase) {
+      if (errorEl) { errorEl.textContent = "パスフレーズを入力してください"; errorEl.classList.remove("hidden"); }
+      return;
+    }
+
+    var saltHex = localStorage.getItem(STORAGE_KEY_ENC_SALT);
+    if (!saltHex) {
+      if (errorEl) { errorEl.textContent = "暗号化設定が壊れています"; errorEl.classList.remove("hidden"); }
+      return;
+    }
+
+    var salt = hexToBytes(saltHex);
+    deriveKey(passphrase, salt).then(function (key) {
+      // 検証文字列で正しいパスフレーズか確認
+      var verifyEnc = localStorage.getItem(STORAGE_KEY_ENC_VERIFY);
+      return decryptString(verifyEnc, key).then(function (plain) {
+        if (plain !== "invoice_verify_ok") throw new Error("invalid");
+        encryptionKey = key;
+
+        // 暗号化データを復号してメモリに展開
+        return decryptStorageData(key);
+      });
+    }).then(function () {
+      var lockScreen = document.getElementById("lock-screen");
+      if (lockScreen) { lockScreen.classList.add("hidden"); lockScreen.style.display = "none"; }
+      initAfterUnlock();
+    }).catch(function () {
+      if (errorEl) { errorEl.textContent = "パスフレーズが正しくありません"; errorEl.classList.remove("hidden"); }
+      if (input) input.value = "";
+    });
+  }
+
+  function decryptStorageData(key) {
+    var decryptOne = function (storageKey, cacheKey) {
+      var raw = localStorage.getItem(storageKey);
+      if (!raw || raw.indexOf("ENC:") !== 0) {
+        // 未暗号化データがあればキャッシュに入れる
+        if (raw) {
+          try { memCache[cacheKey] = JSON.parse(raw); } catch (e) { /* ignore */ }
+        }
+        return Promise.resolve();
+      }
+      return decryptString(raw, key).then(function (plain) {
+        try { memCache[cacheKey] = JSON.parse(plain); } catch (e) { /* ignore */ }
+      });
+    };
+    return Promise.all([
+      decryptOne(STORAGE_KEY_INVOICES, "invoices"),
+      decryptOne(STORAGE_KEY_PROFILE, "profile"),
+      decryptOne(STORAGE_KEY_AUDIT, "audit")
+    ]);
+  }
+
+  function emergencyRestore() {
+    // 暗号化を強制解除してバックアップ復元画面へ
+    var lockScreen = document.getElementById("lock-screen");
+    if (lockScreen) { lockScreen.classList.add("hidden"); lockScreen.style.display = "none"; }
+    initStorageKeys();
+    initEncKeys();
+    initBackupKeys();
+    FormUtils.showScreen("restore-screen");
   }
 
   // === GASからの一回限り移行 ===
@@ -1447,6 +1675,116 @@ var InvoiceApp = (function () {
     }
   }
 
+  // === 暗号化設定 ===
+  function showEncryptionSettings() {
+    FormUtils.showScreen("encryption-screen");
+    var enableSec = document.getElementById("enc-enable-section");
+    var disableSec = document.getElementById("enc-disable-section");
+    if (isEncryptionEnabled()) {
+      if (enableSec) enableSec.classList.add("hidden");
+      if (disableSec) disableSec.classList.remove("hidden");
+    } else {
+      if (enableSec) enableSec.classList.remove("hidden");
+      if (disableSec) disableSec.classList.add("hidden");
+    }
+  }
+
+  function enableEncryption() {
+    var pass1 = document.getElementById("enc-passphrase");
+    var pass2 = document.getElementById("enc-passphrase-confirm");
+    var passphrase = pass1 ? pass1.value : "";
+    var confirm = pass2 ? pass2.value : "";
+
+    if (passphrase.length < 8) {
+      FormUtils.showToast("パスフレーズは8文字以上にしてください", "error");
+      return;
+    }
+    if (passphrase !== confirm) {
+      FormUtils.showToast("パスフレーズが一致しません", "error");
+      return;
+    }
+
+    showSpinner();
+    // ランダムsalt生成
+    var salt = crypto.getRandomValues(new Uint8Array(16));
+    localStorage.setItem(STORAGE_KEY_ENC_SALT, bytesToHex(salt));
+
+    deriveKey(passphrase, salt).then(function (key) {
+      encryptionKey = key;
+      // 検証文字列を暗号化して保存
+      return encryptString("invoice_verify_ok", key).then(function (verifyEnc) {
+        localStorage.setItem(STORAGE_KEY_ENC_VERIFY, verifyEnc);
+        // 既存データを暗号化
+        return encryptExistingData(key);
+      });
+    }).then(function () {
+      localStorage.setItem(STORAGE_KEY_ENC_ENABLED, "true");
+      hideSpinner();
+      FormUtils.showToast("暗号化を有効にしました");
+      if (pass1) pass1.value = "";
+      if (pass2) pass2.value = "";
+      FormUtils.showScreen("main-screen");
+      updateEncryptionDisplay();
+    }).catch(function (err) {
+      hideSpinner();
+      console.error("暗号化有効化エラー:", err);
+      FormUtils.showToast("暗号化の設定に失敗しました", "error");
+    });
+  }
+
+  function encryptExistingData(key) {
+    var keys = [STORAGE_KEY_INVOICES, STORAGE_KEY_PROFILE, STORAGE_KEY_AUDIT];
+    var promises = keys.map(function (k) {
+      var raw = localStorage.getItem(k);
+      if (!raw || raw.indexOf("ENC:") === 0) return Promise.resolve();
+      return encryptString(raw, key).then(function (enc) {
+        localStorage.setItem(k, enc);
+      });
+    });
+    return Promise.all(promises);
+  }
+
+  function disableEncryption() {
+    if (!encryptionKey) {
+      FormUtils.showToast("暗号化キーがありません。再ログインしてください", "error");
+      return;
+    }
+    showSpinner();
+    // 暗号化データを平文に戻す
+    var keys = [STORAGE_KEY_INVOICES, STORAGE_KEY_PROFILE, STORAGE_KEY_AUDIT];
+    var promises = keys.map(function (k) {
+      var raw = localStorage.getItem(k);
+      if (!raw || raw.indexOf("ENC:") !== 0) return Promise.resolve();
+      return decryptString(raw, encryptionKey).then(function (plain) {
+        localStorage.setItem(k, plain);
+      });
+    });
+    Promise.all(promises).then(function () {
+      localStorage.removeItem(STORAGE_KEY_ENC_ENABLED);
+      localStorage.removeItem(STORAGE_KEY_ENC_SALT);
+      localStorage.removeItem(STORAGE_KEY_ENC_VERIFY);
+      encryptionKey = null;
+      hideSpinner();
+      FormUtils.showToast("暗号化を解除しました");
+      FormUtils.showScreen("main-screen");
+      updateEncryptionDisplay();
+    }).catch(function (err) {
+      hideSpinner();
+      console.error("暗号化解除エラー:", err);
+      FormUtils.showToast("暗号化の解除に失敗しました", "error");
+    });
+  }
+
+  function updateEncryptionDisplay() {
+    var el = document.getElementById("encryption-status");
+    if (!el) return;
+    if (isEncryptionEnabled()) {
+      el.innerHTML = '<span style="color:var(--success);font-weight:600">✅ AES-256暗号化が有効</span>';
+    } else {
+      el.innerHTML = '<span style="color:var(--text-light)">暗号化は無効です</span>';
+    }
+  }
+
   // === ユーティリティ ===
   function showSpinner() {
     document.getElementById("spinner").classList.remove("hidden");
@@ -1467,6 +1805,7 @@ var InvoiceApp = (function () {
 
   // === DOM Ready ===
   document.addEventListener("DOMContentLoaded", init);
+
 
   // === Public API ===
   return {
@@ -1505,6 +1844,11 @@ var InvoiceApp = (function () {
     executeRestore: executeRestore,
     showPinReset: showPinReset,
     requestPinReset: requestPinReset,
-    executePinReset: executePinReset
+    executePinReset: executePinReset,
+    unlockApp: unlockApp,
+    emergencyRestore: emergencyRestore,
+    showEncryptionSettings: showEncryptionSettings,
+    enableEncryption: enableEncryption,
+    disableEncryption: disableEncryption
   };
 })();

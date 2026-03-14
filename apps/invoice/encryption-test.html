@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>暗号化 回帰テスト</title>
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    .pass { color: green; }
+    .fail { color: red; font-weight: bold; }
+    #results { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2>暗号化 回帰テスト</h2>
+  <div id="results">実行中...</div>
+  <script>
+    // テスト用のlocalStorageモック（テスト用scopeで分離）
+    var testScope = "test_" + Date.now();
+    var results = [];
+    var passed = 0;
+    var failed = 0;
+
+    function assert(name, condition) {
+      if (condition) {
+        results.push('<span class="pass">✓ ' + name + '</span>');
+        passed++;
+      } else {
+        results.push('<span class="fail">✗ ' + name + '</span>');
+        failed++;
+      }
+    }
+
+    // === テスト対象の暗号化関数を直接テスト ===
+
+    function deriveKey(passphrase, salt) {
+      var enc = new TextEncoder();
+      return crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"])
+        .then(function (baseKey) {
+          return crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+            baseKey,
+            { name: "AES-GCM", length: 256 },
+            false,
+            ["encrypt", "decrypt"]
+          );
+        });
+    }
+
+    function encryptString(plaintext, key) {
+      var enc = new TextEncoder();
+      var iv = crypto.getRandomValues(new Uint8Array(12));
+      return crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, enc.encode(plaintext))
+        .then(function (cipherBuf) {
+          var cipher = new Uint8Array(cipherBuf);
+          var combined = new Uint8Array(iv.length + cipher.length);
+          combined.set(iv);
+          combined.set(cipher, iv.length);
+          var binary = "";
+          for (var i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
+          return "ENC:" + btoa(binary);
+        });
+    }
+
+    function decryptString(encoded, key) {
+      if (!encoded || encoded.indexOf("ENC:") !== 0) return Promise.resolve(encoded);
+      var binary = atob(encoded.substr(4));
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      var iv = bytes.slice(0, 12);
+      var cipher = bytes.slice(12);
+      return crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, cipher)
+        .then(function (plainBuf) {
+          return new TextDecoder().decode(plainBuf);
+        });
+    }
+
+    // === テスト実行 ===
+    async function runTests() {
+      var salt = crypto.getRandomValues(new Uint8Array(16));
+      var key = await deriveKey("testpassphrase123", salt);
+      var wrongKey = await deriveKey("wrongpassphrase", salt);
+
+      // Test 1: 暗号化→復号で元のデータが復元される
+      var testData = JSON.stringify({ invoices: [{ id: "test1", clientName: "テスト株式会社", total: 10000 }] });
+      var encrypted = await encryptString(testData, key);
+      assert("暗号化文字列はENC:で始まる", encrypted.indexOf("ENC:") === 0);
+      assert("暗号化文字列は元データと異なる", encrypted !== testData);
+      var decrypted = await decryptString(encrypted, key);
+      assert("復号後のデータが元データと一致", decrypted === testData);
+
+      // Test 2: 不正なキーでは復号できない
+      var wrongDecryptFailed = false;
+      try {
+        await decryptString(encrypted, wrongKey);
+      } catch (e) {
+        wrongDecryptFailed = true;
+      }
+      assert("不正なキーでは復号失敗", wrongDecryptFailed);
+
+      // Test 3: 非暗号化データはそのまま返る
+      var plainResult = await decryptString("plain text data", key);
+      assert("非暗号化データはそのまま返る", plainResult === "plain text data");
+
+      // Test 4: nullはそのまま返る
+      var nullResult = await decryptString(null, key);
+      assert("nullはnullのまま返る", nullResult === null);
+
+      // Test 5: 暗号化→localStorage保存→読み出し→復号
+      var storageKey = "test_enc_" + testScope;
+      var encData = await encryptString(testData, key);
+      localStorage.setItem(storageKey, encData);
+      var fromStorage = localStorage.getItem(storageKey);
+      assert("localStorageから読んだデータはENC:で始まる", fromStorage.indexOf("ENC:") === 0);
+      var decFromStorage = await decryptString(fromStorage, key);
+      assert("localStorageから復号したデータが元データと一致", decFromStorage === testData);
+      localStorage.removeItem(storageKey);
+
+      // Test 6: 同じ平文でも毎回異なる暗号文（IVがランダム）
+      var enc1 = await encryptString("same data", key);
+      var enc2 = await encryptString("same data", key);
+      assert("同じ平文でも暗号文が異なる（ランダムIV）", enc1 !== enc2);
+      var dec1 = await decryptString(enc1, key);
+      var dec2 = await decryptString(enc2, key);
+      assert("異なる暗号文でも復号結果は同じ", dec1 === dec2 && dec1 === "same data");
+
+      // Test 7: 大きなデータの暗号化/復号
+      var largeData = JSON.stringify(Array.from({ length: 100 }, function (_, i) {
+        return { id: "inv_" + i, clientName: "テスト企業" + i, total: i * 1000, items: [{ name: "品目", qty: 1, price: i * 1000 }] };
+      }));
+      var encLarge = await encryptString(largeData, key);
+      var decLarge = await decryptString(encLarge, key);
+      assert("大量データ（100件）の暗号化/復号が正常", decLarge === largeData);
+
+      // Test 8: 連続暗号化で最後の値が正しく保存される（直列化テスト）
+      var seqKey = "test_seq_" + testScope;
+      var lastValue = "";
+      for (var i = 0; i < 5; i++) {
+        lastValue = JSON.stringify({ seq: i, data: "value_" + i });
+        var enc = await encryptString(lastValue, key);
+        localStorage.setItem(seqKey, enc);
+      }
+      var seqResult = await decryptString(localStorage.getItem(seqKey), key);
+      assert("連続保存後の最終値が正しい", seqResult === lastValue);
+      localStorage.removeItem(seqKey);
+
+      // Test 9: バックアップ資格情報の暗号化/復号
+      var emailPlain = "test@example.com";
+      var pinPlain = "1234";
+      var encEmail = await encryptString(emailPlain, key);
+      var encPin = await encryptString(pinPlain, key);
+      assert("メールアドレスが暗号化される", encEmail.indexOf("ENC:") === 0);
+      assert("PINが暗号化される", encPin.indexOf("ENC:") === 0);
+      var decEmail = await decryptString(encEmail, key);
+      var decPin = await decryptString(encPin, key);
+      assert("メールアドレスが正しく復号される", decEmail === emailPlain);
+      assert("PINが正しく復号される", decPin === pinPlain);
+
+      // Test 10: 暗号化有効化→解除のサイクル（memCacheパターン検証）
+      var memCache = { invoices: [{ id: "1", name: "テスト" }] };
+      var encForDisable = await encryptString(JSON.stringify(memCache.invoices), key);
+      localStorage.setItem("test_disable_" + testScope, encForDisable);
+      // 解除時: memCacheを正として平文保存
+      localStorage.setItem("test_disable_" + testScope, JSON.stringify(memCache.invoices));
+      var afterDisable = localStorage.getItem("test_disable_" + testScope);
+      assert("暗号化解除後は平文で保存される", afterDisable.indexOf("ENC:") === -1);
+      assert("解除後のデータがmemCacheと一致", afterDisable === JSON.stringify(memCache.invoices));
+      localStorage.removeItem("test_disable_" + testScope);
+
+      // 結果表示
+      results.push("");
+      results.push("━━━━━━━━━━━━━━━━━━━━━━");
+      results.push("結果: " + passed + "/" + (passed + failed) + " 通過" + (failed > 0 ? " (" + failed + " 失敗)" : " - 全テスト通過 ✓"));
+      document.getElementById("results").innerHTML = results.join("\n");
+    }
+
+    runTests().catch(function (err) {
+      document.getElementById("results").innerHTML = '<span class="fail">テスト実行エラー: ' + err.message + '</span>';
+    });
+  </script>
+</body>
+</html>

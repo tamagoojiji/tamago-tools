@@ -212,16 +212,17 @@ var InvoiceApp = (function () {
 
   // 書き込みキュー: key単位で直列化し、最後の状態のみ永続化
   var writeQueue = {};
+  var writeSuspended = false; // flush/モード切替中は新規書き込みを拒否
+
   function enqueueWrite(key, value) {
+    if (writeSuspended) return; // モード切替中は書き込み禁止
     if (!encryptionKey) {
       localStorage.setItem(key, value);
       return;
     }
-    // 前の書き込みが完了してから次を実行
     var prev = writeQueue[key] || Promise.resolve();
     writeQueue[key] = prev.then(function () {
-      if (!encryptionKey) {
-        // 暗号化が解除された場合は平文で保存
+      if (!encryptionKey || writeSuspended) {
         localStorage.setItem(key, value);
         return;
       }
@@ -234,6 +235,7 @@ var InvoiceApp = (function () {
   }
 
   function flushPendingWrites() {
+    writeSuspended = true; // 新規書き込みを拒否
     var promises = [];
     for (var key in writeQueue) {
       if (writeQueue.hasOwnProperty(key)) {
@@ -242,6 +244,7 @@ var InvoiceApp = (function () {
     }
     return Promise.all(promises).then(function () {
       writeQueue = {};
+      // writeSuspendedはモード切替完了後に呼び出し側で解除する
     });
   }
 
@@ -394,6 +397,7 @@ var InvoiceApp = (function () {
         memCache = { invoices: null, profile: null, audit: null };
         isLocked = false;
       }
+      writeSuspended = false; // 書き込み再開
       // 平文で保存（暗号化解除済み）
       if (backup.invoices) localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(backup.invoices));
       if (backup.profile) localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(backup.profile));
@@ -409,6 +413,7 @@ var InvoiceApp = (function () {
       updateBackupDisplay();
       updateEncryptionDisplay();
     }).catch(function (err) {
+      writeSuspended = false; // エラー時も書き込み再開
       hideSpinner();
       FormUtils.showToast("復元に失敗しました: " + err.message);
     });
@@ -1863,11 +1868,13 @@ var InvoiceApp = (function () {
       localStorage.removeItem(STORAGE_KEY_ENC_VERIFY);
       encryptionKey = null;
       memCache = { invoices: null, profile: null, audit: null };
+      writeSuspended = false; // 書き込み再開
       hideSpinner();
       FormUtils.showToast("暗号化を解除しました");
       FormUtils.showScreen("main-screen");
       updateEncryptionDisplay();
     }).catch(function (err) {
+      writeSuspended = false; // エラー時も書き込み再開
       hideSpinner();
       console.error("暗号化解除エラー:", err);
       FormUtils.showToast("暗号化の解除に失敗しました", "error");

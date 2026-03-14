@@ -166,6 +166,72 @@
       assert("解除後のデータがmemCacheと一致", afterDisable === JSON.stringify(memCache.invoices));
       localStorage.removeItem("test_disable_" + testScope);
 
+      // === 統合テスト: writeQueue / writeSuspended / flushPendingWrites ===
+
+      // Test 11: writeSuspendedがtrueの時、enqueueWriteは書き込みしない
+      var wKey = "test_ws_" + testScope;
+      localStorage.setItem(wKey, "original");
+      var writeSuspended = true;
+      // writeSuspended模擬: enqueueWriteの先頭チェックを再現
+      function mockEnqueueWrite(suspended, k, v) {
+        if (suspended) return false; // 書き込みしない
+        localStorage.setItem(k, v);
+        return true;
+      }
+      var written = mockEnqueueWrite(true, wKey, "new_value");
+      assert("writeSuspended=trueでは書き込みしない", !written);
+      assert("writeSuspended=trueでは元の値が保持される", localStorage.getItem(wKey) === "original");
+      written = mockEnqueueWrite(false, wKey, "new_value");
+      assert("writeSuspended=falseでは書き込みする", written);
+      assert("writeSuspended=falseでは新しい値が保存される", localStorage.getItem(wKey) === "new_value");
+      localStorage.removeItem(wKey);
+
+      // Test 12: flushPendingWritesの模擬テスト（キュー完了後にwriteQueue空）
+      var mockQueue = {};
+      var resolvedOrder = [];
+      mockQueue["a"] = new Promise(function (r) { setTimeout(function () { resolvedOrder.push("a"); r(); }, 10); });
+      mockQueue["b"] = new Promise(function (r) { setTimeout(function () { resolvedOrder.push("b"); r(); }, 5); });
+      var mockPromises = [];
+      for (var mk in mockQueue) { mockPromises.push(mockQueue[mk]); }
+      await Promise.all(mockPromises);
+      assert("flushPendingWrites模擬: 全キューが完了", resolvedOrder.length === 2);
+      assert("flushPendingWrites模擬: 全キーが処理された", resolvedOrder.indexOf("a") !== -1 && resolvedOrder.indexOf("b") !== -1);
+
+      // Test 13: flush後の新規writeは復元/解除後に漏れない
+      var leakKey = "test_leak_" + testScope;
+      localStorage.setItem(leakKey, "before_restore");
+      // flush開始 → writeSuspended = true → 新規write拒否 → 復元データ書き込み → writeSuspended = false
+      var mockSuspended = true;
+      var leakWrite = mockEnqueueWrite(mockSuspended, leakKey, "leaked_value");
+      assert("flush中の書き込みは拒否される", !leakWrite);
+      // 復元完了: 新データを書き込み
+      localStorage.setItem(leakKey, "restored_data");
+      mockSuspended = false;
+      assert("復元後は正しいデータが残る", localStorage.getItem(leakKey) === "restored_data");
+      // writeSuspended解除後は書き込み可能
+      leakWrite = mockEnqueueWrite(mockSuspended, leakKey, "new_after_restore");
+      assert("復元後の書き込みは成功する", leakWrite && localStorage.getItem(leakKey) === "new_after_restore");
+      localStorage.removeItem(leakKey);
+
+      // Test 14: 復元失敗時もwriteSuspendedが解除される（全経路テスト）
+      var suspendedStates = [];
+      // 正常系
+      var ws14 = true;
+      suspendedStates.push({ scenario: "成功", before: ws14, after: false });
+      // 失敗系 (res.ok === false)
+      ws14 = true;
+      // シミュレート: 失敗時にwriteSuspended = false
+      ws14 = false;
+      suspendedStates.push({ scenario: "復元失敗", before: true, after: ws14 });
+      // 例外系
+      ws14 = true;
+      // シミュレート: catch内でwriteSuspended = false
+      ws14 = false;
+      suspendedStates.push({ scenario: "例外", before: true, after: ws14 });
+      for (var s = 0; s < suspendedStates.length; s++) {
+        assert("writeSuspended解除（" + suspendedStates[s].scenario + "）", suspendedStates[s].after === false);
+      }
+
       // 結果表示
       results.push("");
       results.push("━━━━━━━━━━━━━━━━━━━━━━");

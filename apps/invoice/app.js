@@ -384,6 +384,7 @@ var InvoiceApp = (function () {
     }).then(function (r) { return r.json(); }).then(function (res) {
       hideSpinner();
       if (!res.ok) {
+        writeSuspended = false; // 復元失敗時も書き込み再開
         FormUtils.showToast("バックアップが見つかりません。メアドまたはPINを確認してください");
         return;
       }

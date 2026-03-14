@@ -313,6 +313,14 @@
       <div id="invoice-list"></div>
 
       <button class="btn btn-outline" onclick="InvoiceApp.showProfile()" style="width:100%;margin-top:16px;">事業者情報を編集</button>
+
+      <!-- バックアップ -->
+      <div style="margin-top:16px;background:var(--card-bg);border-radius:16px;padding:16px;box-shadow:var(--shadow)">
+        <div style="font-size:14px;font-weight:700;color:var(--secondary);margin-bottom:10px">🔒 バックアップ</div>
+        <div id="backup-status"></div>
+        <button class="btn btn-outline" onclick="InvoiceApp.showBackupSettings()" style="width:100%;margin-bottom:8px;padding:10px;font-size:13px">バックアップ設定（メアド+PIN）</button>
+        <button class="btn btn-outline" onclick="InvoiceApp.restoreFromBackup()" style="width:100%;padding:10px;font-size:13px">メアド+PINでバックアップ復元</button>
+      </div>
     </div>
   </div>
 
@@ -575,6 +583,95 @@
       </div>
       <button class="btn btn-primary" onclick="InvoiceApp.saveProfile()" style="width:100%;">保存する</button>
       <a href="../../privacy.html" target="_blank" style="display:block;text-align:center;margin-top:16px;font-size:13px;color:var(--primary);text-decoration:underline">プライバシーポリシー</a>
+    </div>
+  </div>
+
+  <!-- バックアップ設定画面 -->
+  <div id="backup-setup-screen" data-screen class="screen hidden">
+    <div class="container" style="padding-top:32px">
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:48px;margin-bottom:12px">🔒</div>
+        <h2 style="font-size:20px;font-weight:800;color:var(--secondary)">バックアップ設定</h2>
+        <p style="font-size:13px;color:var(--text-light);margin-top:8px">メールアドレスとPINでデータを保護</p>
+      </div>
+      <div style="background:var(--card-bg);border-radius:16px;padding:20px;box-shadow:var(--shadow)">
+        <div class="form-group">
+          <label class="form-label">メールアドレス</label>
+          <input type="email" id="backup-email" class="form-input" placeholder="例: example@gmail.com" style="padding:10px;font-size:14px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">PIN（4桁）</label>
+          <input type="tel" id="backup-pin" class="form-input" placeholder="4桁のPIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" style="padding:10px;font-size:14px">
+        </div>
+        <div style="font-size:11px;color:var(--text-light);line-height:1.7;margin-bottom:12px;padding:8px;background:#FFF8E1;border-radius:8px">
+          メアド・PINはハッシュ化（暗号化）され、サーバーには平文で保存されません。<br>
+          PINを忘れた場合は、メールアドレスでリセットできます。<br>
+          空欄で保存するとバックアップが解除されます。
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="InvoiceApp.saveBackupSettings()">保存</button>
+        <button class="btn btn-secondary" style="width:100%" onclick="FormUtils.showScreen('main-screen')">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 復元画面 -->
+  <div id="restore-screen" data-screen class="screen hidden">
+    <div class="container" style="padding-top:32px">
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:48px;margin-bottom:12px">🔄</div>
+        <h2 style="font-size:20px;font-weight:800;color:var(--secondary)">バックアップ復元</h2>
+        <p style="font-size:13px;color:var(--text-light);margin-top:8px">登録時のメールアドレスとPINを入力</p>
+      </div>
+      <div style="background:var(--card-bg);border-radius:16px;padding:20px;box-shadow:var(--shadow)">
+        <div class="form-group">
+          <label class="form-label">メールアドレス</label>
+          <input type="email" id="restore-email" class="form-input" placeholder="例: example@gmail.com" style="padding:10px;font-size:14px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">PIN（4桁）</label>
+          <input type="tel" id="restore-pin" class="form-input" placeholder="4桁のPIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" style="padding:10px;font-size:14px">
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="InvoiceApp.executeRestore()">復元する</button>
+        <div style="text-align:center;margin-top:16px">
+          <button style="background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline" onclick="InvoiceApp.showPinReset()">PINを忘れた方はこちら</button>
+        </div>
+        <div style="text-align:center;margin-top:8px">
+          <button style="background:none;border:none;color:var(--text-light);font-size:13px;cursor:pointer" onclick="FormUtils.showScreen('main-screen')">戻る</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PINリセット画面 -->
+  <div id="pin-reset-screen" data-screen class="screen hidden">
+    <div class="container" style="padding-top:32px">
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:48px;margin-bottom:12px">🔑</div>
+        <h2 style="font-size:20px;font-weight:800;color:var(--secondary)">PINリセット</h2>
+      </div>
+      <div id="inv-pin-reset-step1" style="background:var(--card-bg);border-radius:16px;padding:20px;box-shadow:var(--shadow)">
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;line-height:1.7">登録時のメールアドレスにリセットコード（6桁）を送信します。</p>
+        <div class="form-group">
+          <label class="form-label">メールアドレス</label>
+          <input type="email" id="inv-pin-reset-email" class="form-input" placeholder="例: example@gmail.com" style="padding:10px;font-size:14px">
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="InvoiceApp.requestPinReset()">リセットコードを送信</button>
+        <div style="text-align:center;margin-top:12px">
+          <button style="background:none;border:none;color:var(--text-light);font-size:13px;cursor:pointer" onclick="InvoiceApp.restoreFromBackup()">戻る</button>
+        </div>
+      </div>
+      <div id="inv-pin-reset-step2" class="hidden" style="background:var(--card-bg);border-radius:16px;padding:20px;box-shadow:var(--shadow)">
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;line-height:1.7">メールに届いた6桁のリセットコードと、新しいPINを入力してください。<br>コードは10分間有効です。</p>
+        <div class="form-group">
+          <label class="form-label">リセットコード（6桁）</label>
+          <input type="tel" id="inv-pin-reset-code" class="form-input" placeholder="123456" maxlength="6" inputmode="numeric" style="padding:10px;font-size:14px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">新しいPIN（4桁）</label>
+          <input type="tel" id="inv-pin-reset-new-pin" class="form-input" placeholder="4桁のPIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" style="padding:10px;font-size:14px">
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="InvoiceApp.executePinReset()">PINをリセット</button>
+      </div>
     </div>
   </div>
 

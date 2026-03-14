@@ -103,6 +103,198 @@ var InvoiceApp = (function () {
     }
   }
 
+  // === SHA-256 ===
+  function sha256(message) {
+    var encoder = new TextEncoder();
+    var data = encoder.encode(message);
+    return crypto.subtle.digest("SHA-256", data).then(function (buffer) {
+      var hashArray = Array.from(new Uint8Array(buffer));
+      return hashArray.map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+    });
+  }
+
+  // === バックアップ設定 ===
+  var backupEmail = null;
+  var backupPin = null;
+  var STORAGE_KEY_BACKUP_EMAIL = "";
+  var STORAGE_KEY_BACKUP_PIN = "";
+
+  function initBackupKeys() {
+    STORAGE_KEY_BACKUP_EMAIL = "invoice_backup_email:" + scopeId;
+    STORAGE_KEY_BACKUP_PIN = "invoice_backup_pin:" + scopeId;
+    backupEmail = localStorage.getItem(STORAGE_KEY_BACKUP_EMAIL) || null;
+    backupPin = localStorage.getItem(STORAGE_KEY_BACKUP_PIN) || null;
+  }
+
+  function autoBackup() {
+    if (!backupEmail || !backupPin) return Promise.resolve();
+    return Promise.all([sha256(backupEmail + backupPin), sha256(backupEmail)]).then(function (hashes) {
+      var invoices = getAllInvoicesRaw();
+      var profile = getProfileFromStorage();
+      var backupData = JSON.stringify({ invoices: invoices, profile: profile, auditLog: getAuditLogs() });
+      return fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "backup",
+          apiKey: API_KEY,
+          lookupKey: hashes[0],
+          emailHash: hashes[1],
+          data: backupData
+        })
+      });
+    }).then(function (r) { return r.json(); }).catch(function (err) {
+      console.error("自動バックアップエラー:", err);
+    });
+  }
+
+  function showBackupSettings() {
+    var emailInput = document.getElementById("backup-email");
+    var pinInput = document.getElementById("backup-pin");
+    if (emailInput) emailInput.value = backupEmail || "";
+    if (pinInput) pinInput.value = backupPin || "";
+    FormUtils.showScreen("backup-setup-screen");
+  }
+
+  function saveBackupSettings() {
+    var email = document.getElementById("backup-email").value.trim();
+    var pin = document.getElementById("backup-pin").value.trim();
+
+    if (email && pin) {
+      if (!/^\d{4}$/.test(pin)) {
+        FormUtils.showToast("PINは4桁の数字で入力してください");
+        return;
+      }
+      backupEmail = email;
+      backupPin = pin;
+      localStorage.setItem(STORAGE_KEY_BACKUP_EMAIL, email);
+      localStorage.setItem(STORAGE_KEY_BACKUP_PIN, pin);
+      FormUtils.showToast("バックアップ設定を保存しました");
+      autoBackup();
+    } else if (!email && !pin) {
+      backupEmail = null;
+      backupPin = null;
+      localStorage.removeItem(STORAGE_KEY_BACKUP_EMAIL);
+      localStorage.removeItem(STORAGE_KEY_BACKUP_PIN);
+      FormUtils.showToast("バックアップを解除しました");
+    } else {
+      FormUtils.showToast("メールアドレスとPINの両方を入力してください");
+      return;
+    }
+    updateBackupDisplay();
+    FormUtils.showScreen("main-screen");
+  }
+
+  function updateBackupDisplay() {
+    var display = document.getElementById("backup-status");
+    if (!display) return;
+    if (backupEmail && backupPin) {
+      var masked = backupEmail.replace(/^(.{2})(.*)(@.*)$/, function (m, a, b, c) {
+        return a + b.replace(/./g, "*") + c;
+      });
+      display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#E3F2FD;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">🔒</span><div><div style="font-size:13px;font-weight:700;color:#1565C0">バックアップON</div><div style="font-size:11px;color:#666">' + escapeHtml(masked) + ' + PIN</div></div></div>';
+    } else {
+      display.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#FFF3E0;border-radius:10px;margin-bottom:10px"><span style="font-size:20px">⚠️</span><div><div style="font-size:13px;font-weight:700;color:#E65100">バックアップなし</div><div style="font-size:11px;color:#666">データ消失のリスクあり</div></div></div>';
+    }
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function restoreFromBackup() {
+    FormUtils.showScreen("restore-screen");
+  }
+
+  function executeRestore() {
+    var email = document.getElementById("restore-email").value.trim();
+    var pin = document.getElementById("restore-pin").value.trim();
+    if (!email || !pin) {
+      FormUtils.showToast("メールアドレスとPINを入力してください");
+      return;
+    }
+    showSpinner();
+    sha256(email + pin).then(function (lookupKey) {
+      return fetch(GAS_URL + "?action=restore&lookupKey=" + encodeURIComponent(lookupKey) + "&apiKey=" + API_KEY);
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      hideSpinner();
+      if (!res.ok) {
+        FormUtils.showToast("バックアップが見つかりません。メアドまたはPINを確認してください");
+        return;
+      }
+      var backup = JSON.parse(res.data);
+      if (backup.invoices) saveInvoicesToStorage(backup.invoices);
+      if (backup.profile) saveProfileToStorage(backup.profile);
+      if (backup.auditLog) localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(backup.auditLog));
+      backupEmail = email;
+      backupPin = pin;
+      localStorage.setItem(STORAGE_KEY_BACKUP_EMAIL, email);
+      localStorage.setItem(STORAGE_KEY_BACKUP_PIN, pin);
+      FormUtils.showToast("復元しました");
+      FormUtils.showScreen("main-screen");
+      loadInvoices();
+      loadProfile();
+      updateBackupDisplay();
+    }).catch(function (err) {
+      hideSpinner();
+      FormUtils.showToast("復元に失敗しました: " + err.message);
+    });
+  }
+
+  function showPinReset() {
+    FormUtils.showScreen("pin-reset-screen");
+    var step1 = document.getElementById("inv-pin-reset-step1");
+    var step2 = document.getElementById("inv-pin-reset-step2");
+    if (step1) step1.classList.remove("hidden");
+    if (step2) step2.classList.add("hidden");
+  }
+
+  function requestPinReset() {
+    var email = document.getElementById("inv-pin-reset-email").value.trim();
+    if (!email) { FormUtils.showToast("メールアドレスを入力してください"); return; }
+    showSpinner();
+    fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "request_pin_reset", apiKey: API_KEY, email: email })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      hideSpinner();
+      FormUtils.showToast(res.message || "送信しました");
+      var step1 = document.getElementById("inv-pin-reset-step1");
+      var step2 = document.getElementById("inv-pin-reset-step2");
+      if (step1) step1.classList.add("hidden");
+      if (step2) step2.classList.remove("hidden");
+    }).catch(function (err) {
+      hideSpinner();
+      FormUtils.showToast("送信に失敗しました");
+    });
+  }
+
+  function executePinReset() {
+    var email = document.getElementById("inv-pin-reset-email").value.trim();
+    var code = document.getElementById("inv-pin-reset-code").value.trim();
+    var newPin = document.getElementById("inv-pin-reset-new-pin").value.trim();
+    if (!code || !newPin) { FormUtils.showToast("コードと新しいPINを入力してください"); return; }
+    showSpinner();
+    fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "reset_pin", apiKey: API_KEY, email: email, code: code, newPin: newPin })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      hideSpinner();
+      if (res.ok) {
+        backupPin = newPin;
+        localStorage.setItem(STORAGE_KEY_BACKUP_PIN, newPin);
+        FormUtils.showToast("PINをリセットしました");
+        FormUtils.showScreen("main-screen");
+      } else {
+        FormUtils.showToast(res.error || "リセットに失敗しました");
+      }
+    }).catch(function (err) {
+      hideSpinner();
+      FormUtils.showToast("リセットに失敗しました");
+    });
+  }
+
   function generateInvoiceNumber() {
     var now = new Date();
     var y = now.getFullYear();
@@ -142,9 +334,11 @@ var InvoiceApp = (function () {
   // === 初期化 ===
   function init() {
     initStorageKeys();
+    initBackupKeys();
     migrateFromGas().then(function () {
       loadInvoices();
       loadProfile();
+      updateBackupDisplay();
     });
   }
 
@@ -564,6 +758,7 @@ var InvoiceApp = (function () {
           data.createdAt = invoices[i].createdAt;
           invoices[i] = data;
           saveInvoicesToStorage(invoices);
+          autoBackup();
           return data;
         }
       }
@@ -585,6 +780,7 @@ var InvoiceApp = (function () {
       snapshot: JSON.parse(JSON.stringify(data))
     });
 
+    autoBackup();
     return data;
   }
 
@@ -906,6 +1102,7 @@ var InvoiceApp = (function () {
       }
     }
     saveInvoicesToStorage(invoices);
+    autoBackup();
     FormUtils.showToast("削除しました");
     backToMain();
   }
@@ -1301,6 +1498,13 @@ var InvoiceApp = (function () {
     selectBank: selectBank,
     searchBranch: searchBranch,
     selectBranch: selectBranch,
-    formatAccountNumber: formatAccountNumber
+    formatAccountNumber: formatAccountNumber,
+    showBackupSettings: showBackupSettings,
+    saveBackupSettings: saveBackupSettings,
+    restoreFromBackup: restoreFromBackup,
+    executeRestore: executeRestore,
+    showPinReset: showPinReset,
+    requestPinReset: requestPinReset,
+    executePinReset: executePinReset
   };
 })();

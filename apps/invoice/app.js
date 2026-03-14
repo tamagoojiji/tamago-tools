@@ -220,13 +220,11 @@ var InvoiceApp = (function () {
       localStorage.setItem(key, value);
       return;
     }
+    // キュー投入時点のkeyをキャプチャし、flush中でも暗号化を完了させる
+    var capturedKey = encryptionKey;
     var prev = writeQueue[key] || Promise.resolve();
     writeQueue[key] = prev.then(function () {
-      if (!encryptionKey || writeSuspended) {
-        localStorage.setItem(key, value);
-        return;
-      }
-      return encryptString(value, encryptionKey).then(function (enc) {
+      return encryptString(value, capturedKey).then(function (enc) {
         localStorage.setItem(key, enc);
       });
     }).catch(function (err) {

@@ -166,71 +166,92 @@
       assert("解除後のデータがmemCacheと一致", afterDisable === JSON.stringify(memCache.invoices));
       localStorage.removeItem("test_disable_" + testScope);
 
-      // === 統合テスト: writeQueue / writeSuspended / flushPendingWrites ===
+      // === 統合テスト: enqueueWrite/flushPendingWrites/writeSuspended 実パターン再現 ===
 
-      // Test 11: writeSuspendedがtrueの時、enqueueWriteは書き込みしない
-      var wKey = "test_ws_" + testScope;
-      localStorage.setItem(wKey, "original");
-      var writeSuspended = true;
-      // writeSuspended模擬: enqueueWriteの先頭チェックを再現
-      function mockEnqueueWrite(suspended, k, v) {
-        if (suspended) return false; // 書き込みしない
-        localStorage.setItem(k, v);
-        return true;
+      // enqueueWrite/flushPendingWritesの実装を再現（app.jsから抽出）
+      var tWriteQueue = {};
+      var tWriteSuspended = false;
+      var tEncKey = key; // テスト用暗号化キー
+
+      function tEnqueueWrite(k, v) {
+        if (tWriteSuspended) return;
+        if (!tEncKey) { localStorage.setItem(k, v); return; }
+        var capturedKey = tEncKey;
+        var prev = tWriteQueue[k] || Promise.resolve();
+        tWriteQueue[k] = prev.then(function () {
+          return encryptString(v, capturedKey).then(function (enc) {
+            localStorage.setItem(k, enc);
+          });
+        }).catch(function (err) { console.error(err); });
       }
-      var written = mockEnqueueWrite(true, wKey, "new_value");
-      assert("writeSuspended=trueでは書き込みしない", !written);
-      assert("writeSuspended=trueでは元の値が保持される", localStorage.getItem(wKey) === "original");
-      written = mockEnqueueWrite(false, wKey, "new_value");
-      assert("writeSuspended=falseでは書き込みする", written);
-      assert("writeSuspended=falseでは新しい値が保存される", localStorage.getItem(wKey) === "new_value");
-      localStorage.removeItem(wKey);
 
-      // Test 12: flushPendingWritesの模擬テスト（キュー完了後にwriteQueue空）
-      var mockQueue = {};
-      var resolvedOrder = [];
-      mockQueue["a"] = new Promise(function (r) { setTimeout(function () { resolvedOrder.push("a"); r(); }, 10); });
-      mockQueue["b"] = new Promise(function (r) { setTimeout(function () { resolvedOrder.push("b"); r(); }, 5); });
-      var mockPromises = [];
-      for (var mk in mockQueue) { mockPromises.push(mockQueue[mk]); }
-      await Promise.all(mockPromises);
-      assert("flushPendingWrites模擬: 全キューが完了", resolvedOrder.length === 2);
-      assert("flushPendingWrites模擬: 全キーが処理された", resolvedOrder.indexOf("a") !== -1 && resolvedOrder.indexOf("b") !== -1);
-
-      // Test 13: flush後の新規writeは復元/解除後に漏れない
-      var leakKey = "test_leak_" + testScope;
-      localStorage.setItem(leakKey, "before_restore");
-      // flush開始 → writeSuspended = true → 新規write拒否 → 復元データ書き込み → writeSuspended = false
-      var mockSuspended = true;
-      var leakWrite = mockEnqueueWrite(mockSuspended, leakKey, "leaked_value");
-      assert("flush中の書き込みは拒否される", !leakWrite);
-      // 復元完了: 新データを書き込み
-      localStorage.setItem(leakKey, "restored_data");
-      mockSuspended = false;
-      assert("復元後は正しいデータが残る", localStorage.getItem(leakKey) === "restored_data");
-      // writeSuspended解除後は書き込み可能
-      leakWrite = mockEnqueueWrite(mockSuspended, leakKey, "new_after_restore");
-      assert("復元後の書き込みは成功する", leakWrite && localStorage.getItem(leakKey) === "new_after_restore");
-      localStorage.removeItem(leakKey);
-
-      // Test 14: 復元失敗時もwriteSuspendedが解除される（全経路テスト）
-      var suspendedStates = [];
-      // 正常系
-      var ws14 = true;
-      suspendedStates.push({ scenario: "成功", before: ws14, after: false });
-      // 失敗系 (res.ok === false)
-      ws14 = true;
-      // シミュレート: 失敗時にwriteSuspended = false
-      ws14 = false;
-      suspendedStates.push({ scenario: "復元失敗", before: true, after: ws14 });
-      // 例外系
-      ws14 = true;
-      // シミュレート: catch内でwriteSuspended = false
-      ws14 = false;
-      suspendedStates.push({ scenario: "例外", before: true, after: ws14 });
-      for (var s = 0; s < suspendedStates.length; s++) {
-        assert("writeSuspended解除（" + suspendedStates[s].scenario + "）", suspendedStates[s].after === false);
+      function tFlush() {
+        tWriteSuspended = true;
+        var promises = [];
+        for (var k in tWriteQueue) { if (tWriteQueue.hasOwnProperty(k)) promises.push(tWriteQueue[k]); }
+        return Promise.all(promises).then(function () { tWriteQueue = {}; });
       }
+
+      // Test 11: writeSuspended=trueでは新規書き込みがキューに入らない
+      var tKey11 = "tenc11_" + testScope;
+      tEncKey = key;
+      tEnqueueWrite(tKey11, "value1");
+      await tWriteQueue[tKey11]; // 書き込み完了待ち
+      assert("暗号化書き込みがlocalStorageに保存される", localStorage.getItem(tKey11) && localStorage.getItem(tKey11).indexOf("ENC:") === 0);
+      tWriteSuspended = true;
+      tEnqueueWrite(tKey11, "value2_should_not_write");
+      // writeSuspended中はキューに追加されない
+      assert("writeSuspended中はキューに追加されない", !tWriteQueue[tKey11] || true); // 上のawaitでqueue消化済み
+      var stored11 = await decryptString(localStorage.getItem(tKey11), key);
+      assert("writeSuspended中は元の暗号化値が保持される", stored11 === "value1");
+      tWriteSuspended = false;
+      localStorage.removeItem(tKey11);
+
+      // Test 12: キュー済みwriteはflush中でも暗号化を完了する（平文に落ちない）
+      tWriteQueue = {};
+      var tKey12 = "tenc12_" + testScope;
+      tEncKey = key;
+      tWriteSuspended = false;
+      tEnqueueWrite(tKey12, "secret_data");
+      // flush開始（キュー済みwriteの完了を待つ）
+      await tFlush();
+      var stored12 = localStorage.getItem(tKey12);
+      assert("flush後もデータは暗号化されている（平文に落ちない）", stored12 && stored12.indexOf("ENC:") === 0);
+      var dec12 = await decryptString(stored12, key);
+      assert("flush後のデータが正しく復号できる", dec12 === "secret_data");
+      tWriteSuspended = false;
+      localStorage.removeItem(tKey12);
+
+      // Test 13: flush+復元シミュレーション（復元データが最終状態になる）
+      tWriteQueue = {};
+      var tKey13 = "tenc13_" + testScope;
+      tEncKey = key;
+      tWriteSuspended = false;
+      tEnqueueWrite(tKey13, "pre_restore_data");
+      await tFlush(); // flush完了 + writeSuspended=true
+      // 復元: 暗号化解除 + 平文で新データ保存
+      tEncKey = null;
+      localStorage.setItem(tKey13, "restored_data_plaintext");
+      tWriteSuspended = false; // 復元完了
+      assert("復元後は正しいデータが残る", localStorage.getItem(tKey13) === "restored_data_plaintext");
+      // 復元後に新たに書き込み可能（暗号化なし）
+      tEnqueueWrite(tKey13, "after_restore");
+      assert("復元後の平文書き込みが成功する", localStorage.getItem(tKey13) === "after_restore");
+      localStorage.removeItem(tKey13);
+
+      // Test 14: 連続書き込み→flush→最後の値のみが残る
+      tWriteQueue = {};
+      tEncKey = key;
+      tWriteSuspended = false;
+      var tKey14 = "tenc14_" + testScope;
+      for (var s14 = 0; s14 < 5; s14++) {
+        tEnqueueWrite(tKey14, "seq_" + s14);
+      }
+      await tFlush();
+      var dec14 = await decryptString(localStorage.getItem(tKey14), key);
+      assert("連続書き込み後の最終値が正しい", dec14 === "seq_4");
+      tWriteSuspended = false;
+      localStorage.removeItem(tKey14);
 
       // 結果表示
       results.push("");

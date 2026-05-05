@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>お問い合わせ・ご要望 | たまごのアプリ工房</title>
+  <link rel="stylesheet" href="../../style.css?v=1">
+  <style>
+    .feedback-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .feedback-header h2 {
+      font-size: 20px;
+      margin: 0 0 8px 0;
+    }
+    .feedback-header p {
+      font-size: 13px;
+      color: var(--text-sub, #666);
+      margin: 0;
+      line-height: 1.6;
+    }
+    .form-group {
+      margin-bottom: 18px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .form-group .required {
+      color: #e53935;
+      font-size: 11px;
+      margin-left: 4px;
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+    .form-group select,
+    .form-group input[type="text"],
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 14px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    .form-group textarea {
+      resize: vertical;
+      min-height: 120px;
+    }
+    .form-group .ig-input {
+      display: flex;
+      align-items: center;
+    }
+    .form-group .ig-input span {
+      padding: 10px 4px 10px 12px;
+      background: #fafafa;
+      border: 1px solid #ddd;
+      border-right: none;
+      border-radius: 8px 0 0 8px;
+      color: #888;
+      font-size: 14px;
+    }
+    .form-group .ig-input input {
+      border-radius: 0 8px 8px 0;
+      border-left: none;
+    }
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      background: #4caf50;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .submit-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .result-msg {
+      padding: 14px;
+      border-radius: 8px;
+      margin-top: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+      display: none;
+    }
+    .result-msg.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #a5d6a7;
+    }
+    .result-msg.error {
+      background: #ffebee;
+      color: #c62828;
+      border: 1px solid #ef9a9a;
+    }
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="screen">
+    <div class="container">
+      <div class="feedback-header">
+        <h2>📩 お問い合わせ・ご要望</h2>
+        <p>
+          ご意見・ご要望・「こんなアプリ欲しい」など<br>
+          気軽に送ってください✨
+        </p>
+      </div>
+
+      <form id="feedback-form" autocomplete="off">
+        <div class="form-group">
+          <label>種別<span class="required">*必須</span></label>
+          <select id="category" required>
+            <option value="">選んでください</option>
+            <option value="既存アプリへの意見">既存アプリへの意見・感想</option>
+            <option value="バグ報告">バグ・不具合の報告</option>
+            <option value="今後の希望">今後の希望（こんなアプリ欲しい）</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+
+        <div class="form-group hidden" id="app-group">
+          <label>対象アプリ<span class="required">*必須</span></label>
+          <select id="app">
+            <option value="">選んでください</option>
+            <option value="今日なに作る？（冷蔵庫レシピ）">今日なに作る？（冷蔵庫レシピ）</option>
+            <option value="アプリ工房 全般">アプリ工房 全般</option>
+            <option value="その他">その他（内容欄に記載）</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>内容<span class="required">*必須</span></label>
+          <textarea id="content" required placeholder="ご意見・ご要望を自由にお書きください"></textarea>
+          <p class="hint">どんなに細かいことでもOKです。具体的に書いていただけると改善の参考になります🙏</p>
+        </div>
+
+        <div class="form-group">
+          <label>Instagram ID（任意）</label>
+          <div class="ig-input">
+            <span>@</span>
+            <input type="text" id="instagram" placeholder="instagram_id">
+          </div>
+          <p class="hint">返信が必要な場合は記入してください。InstagramのDMでご返信します。</p>
+        </div>
+
+        <button type="submit" class="submit-btn" id="submit-btn">送信する</button>
+      </form>
+
+      <div class="result-msg success" id="result-success">
+        ✨ 送信しました！<br>
+        ご意見ありがとうございます。<br>
+        Instagram IDをご記入いただいた方には、必要に応じてDMでご返信します。
+      </div>
+      <div class="result-msg error" id="result-error">
+        💦 送信に失敗しました。<br>
+        時間を置いてもう一度お試しいただくか、Instagram <a href="https://www.instagram.com/tamago.app" target="_blank">@tamago.app</a> までDMでご連絡ください。
+      </div>
+
+      <div class="footer" style="margin-top:32px">
+        <a href="../../">← たまごツール トップ</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    const categorySel = document.getElementById('category');
+    const appGroup = document.getElementById('app-group');
+    const appSel = document.getElementById('app');
+    const form = document.getElementById('feedback-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const successMsg = document.getElementById('result-success');
+    const errorMsg = document.getElementById('result-error');
+
+    const APPS_REQUIRED_CATEGORIES = ['既存アプリへの意見', 'バグ報告'];
+
+    categorySel.addEventListener('change', () => {
+      const v = categorySel.value;
+      if (APPS_REQUIRED_CATEGORIES.includes(v)) {
+        appGroup.classList.remove('hidden');
+        appSel.required = true;
+      } else {
+        appGroup.classList.add('hidden');
+        appSel.required = false;
+        appSel.value = '';
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      successMsg.style.display = 'none';
+      errorMsg.style.display = 'none';
+
+      const category = categorySel.value;
+      const app = appSel.value;
+      const content = document.getElementById('content').value.trim();
+      const instagram = document.getElementById('instagram').value.trim().replace(/^@/, '');
+
+      if (!category || !content) {
+        errorMsg.style.display = 'block';
+        errorMsg.textContent = '⚠️ 種別と内容は必須です';
+        return;
+      }
+      if (APPS_REQUIRED_CATEGORIES.includes(category) && !app) {
+        errorMsg.style.display = 'block';
+        errorMsg.textContent = '⚠️ 対象アプリを選んでください';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = '送信中…';
+
+      try {
+        if (!window.GAS_WEBAPP_URL || window.GAS_WEBAPP_URL.includes('__GAS_WEBAPP_URL__')) {
+          throw new Error('GAS Web App URL not configured');
+        }
+        const res = await fetch(window.GAS_WEBAPP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            category,
+            app,
+            content,
+            instagram,
+            ua: navigator.userAgent,
+          }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          form.reset();
+          appGroup.classList.add('hidden');
+          successMsg.style.display = 'block';
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          throw new Error(data.error || 'unknown');
+        }
+      } catch (err) {
+        console.error(err);
+        errorMsg.style.display = 'block';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '送信する';
+      }
+    });
+  </script>
+</body>
+</html>

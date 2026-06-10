@@ -46,10 +46,26 @@ var CrmApp = (function () {
   }
 
   function load() {
-    try {
-      state.customers = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-    } catch (e) {
+    var raw;
+    try { raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { raw = null; }
+    if (!Array.isArray(raw)) {
       state.customers = [];
+    } else {
+      // 破損・欠損データでもクラッシュしないよう正規化（name は必ず文字列）
+      state.customers = raw
+        .filter(function (c) { return c && typeof c === "object"; })
+        .map(function (c) {
+          return {
+            id: c.id || FormUtils.generateId(),
+            name: String(c.name == null ? "" : c.name),
+            contactType: String(c.contactType == null ? "" : c.contactType),
+            contact: String(c.contact == null ? "" : c.contact),
+            tags: String(c.tags == null ? "" : c.tags),
+            lastContact: typeof c.lastContact === "string" ? c.lastContact : "",
+            memo: String(c.memo == null ? "" : c.memo)
+          };
+        })
+        .filter(function (c) { return c.name !== ""; });
     }
     var t = parseInt(localStorage.getItem(THRESHOLD_KEY), 10);
     state.threshold = (t && t > 0) ? t : 30;

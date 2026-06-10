@@ -26,12 +26,28 @@ var InventoryApp = (function () {
     return e;
   }
 
+  function num(v, d) {
+    var n = Number(v);
+    return isFinite(n) ? n : (d || 0);
+  }
   function load() {
-    try {
-      state.items = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-    } catch (e) {
-      state.items = [];
-    }
+    var raw;
+    try { raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { raw = null; }
+    if (!Array.isArray(raw)) { state.items = []; return; }
+    // 破損・欠損データでもクラッシュしないよう正規化（name は必ず文字列・数値は数値）
+    state.items = raw
+      .filter(function (it) { return it && typeof it === "object"; })
+      .map(function (it) {
+        return {
+          id: it.id || FormUtils.generateId(),
+          name: String(it.name == null ? "" : it.name),
+          category: String(it.category == null ? "" : it.category),
+          qty: Math.max(0, num(it.qty, 0)),
+          unit: String(it.unit == null ? "" : it.unit),
+          min: Math.max(0, num(it.min, 0))
+        };
+      })
+      .filter(function (it) { return it.name !== ""; });
   }
   function persist() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));

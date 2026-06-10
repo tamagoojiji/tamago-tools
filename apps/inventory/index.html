@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>かんたん在庫管理 | たまごツール</title>
+  <meta name="description" content="品目を登録して数量を管理。少なくなったら「要発注」でお知らせ。データはスマホ内に保存。">
+  <link rel="stylesheet" href="../../style.css?v=1">
+  <style>
+    /* 在庫アプリ固有 */
+    .search-box {
+      width: 100%; padding: 10px 14px; font-size: 14px;
+      border: 1px solid var(--border); border-radius: 12px;
+      margin-bottom: 14px; background: var(--card-bg);
+    }
+    .qty-stepper { display: flex; align-items: center; gap: 8px; }
+    .qty-btn {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 1px solid var(--border); background: var(--card-bg);
+      font-size: 18px; font-weight: 700; color: var(--secondary);
+      cursor: pointer; flex-shrink: 0; line-height: 1;
+    }
+    .qty-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .qty-num { font-size: 18px; font-weight: 800; color: var(--secondary); min-width: 34px; text-align: center; }
+    .stock-badge {
+      display: inline-block; padding: 2px 9px; font-size: 11px; font-weight: 700;
+      border-radius: 20px; margin-top: 3px;
+    }
+    .stock-ok { background: #E8F5E9; color: #2E7D32; }
+    .stock-warn { background: #FFEBEE; color: #C62828; }
+    .disclaimer { font-size: 11px; color: #999; text-align: center; line-height: 1.6; margin-top: 16px; }
+    .settings-card {
+      background: var(--card-bg); border-radius: 12px; padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 12px;
+    }
+    .settings-title { font-size: 14px; font-weight: 700; color: var(--secondary); margin-bottom: 8px; }
+    .settings-text { font-size: 12px; color: var(--text-light); line-height: 1.6; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #C62828; }
+    .btn-sm { padding: 8px 16px; font-size: 13px; }
+    .data-card.need-order { border: 1px solid #F2B8B8; }
+  </style>
+</head>
+<body>
+  <!-- イントロ画面 -->
+  <div id="intro-screen" data-screen class="screen">
+    <div class="container">
+      <div class="intro-card">
+        <div class="intro-icon">📦</div>
+        <h1 class="intro-title">かんたん在庫管理</h1>
+        <p class="intro-desc">
+          品目を登録して数量を管理。<br>
+          少なくなったら「要発注」でお知らせします。
+        </p>
+        <div class="intro-meta">
+          <span>➕ タップで増減</span>
+          <span>🔔 要発注アラート</span>
+        </div>
+        <button class="btn btn-primary start-btn" onclick="InventoryApp.start()">使ってみる</button>
+        <p class="disclaimer">※データはお使いの端末（ブラウザ）内にのみ保存されます。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- メイン画面 -->
+  <div id="main-screen" data-screen class="screen hidden">
+    <div class="container">
+      <div class="tab-nav">
+        <button class="tab-btn active" id="tab-btn-list" onclick="InventoryApp.switchTab('list')">在庫一覧</button>
+        <button class="tab-btn" id="tab-btn-settings" onclick="InventoryApp.switchTab('settings')">設定</button>
+      </div>
+
+      <!-- 在庫一覧タブ -->
+      <div id="tab-list" class="tab-content active">
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-label">登録品目</div><div class="stat-value" id="stat-total">0<span class="stat-unit">件</span></div></div>
+          <div class="stat-card"><div class="stat-label">要発注</div><div class="stat-value" id="stat-warn">0<span class="stat-unit">件</span></div></div>
+        </div>
+        <input type="text" id="search-input" class="search-box" placeholder="🔍 品名・カテゴリで検索" oninput="InventoryApp.render()">
+        <div id="inventory-list"></div>
+        <button class="add-btn" onclick="InventoryApp.openEdit()">＋ 品目を追加</button>
+      </div>
+
+      <!-- 設定タブ -->
+      <div id="tab-settings" class="tab-content">
+        <div class="settings-card">
+          <div class="settings-title">データ管理</div>
+          <p class="settings-text" style="margin-bottom:12px">登録した在庫データはこの端末のブラウザ内にのみ保存されています。すべて削除します。</p>
+          <button class="btn btn-danger btn-sm" onclick="InventoryApp.clearAll()">全データを削除</button>
+        </div>
+        <div class="settings-card">
+          <div class="settings-title">使い方</div>
+          <p class="settings-text">
+            品目を登録し、入荷・使用に合わせて「＋」「−」で数量を更新してください。
+            現在数が「最低在庫」を下回ると「要発注」と赤く表示され、一覧の上部に並びます。
+          </p>
+        </div>
+        <div class="cta-section">
+          <img src="../../images/icon.png" alt="たまご" class="cta-icon">
+          <p class="cta-text">手作業をもっとラクにするヒントを発信中！</p>
+          <a href="https://www.instagram.com/tamago.app" target="_blank" rel="noopener" class="cta-btn">@tamago.app をフォロー</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 編集画面 -->
+  <div id="edit-screen" data-screen class="screen hidden">
+    <div class="container">
+      <h2 class="section-title" style="text-align:center" id="edit-title">品目を追加</h2>
+      <div class="form-group">
+        <label class="form-label">品名 <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="f-name" class="form-input" placeholder="例：コピー用紙 A4">
+      </div>
+      <div class="form-group">
+        <label class="form-label">カテゴリ</label>
+        <input type="text" id="f-category" class="form-input" placeholder="例：事務用品（任意）">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">現在の数量</label>
+          <input type="number" id="f-qty" class="form-input" placeholder="0" min="0" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label class="form-label">単位</label>
+          <input type="text" id="f-unit" class="form-input" placeholder="個 / 箱 など">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">最低在庫（これを下回ると要発注）</label>
+        <input type="number" id="f-min" class="form-input" placeholder="例：3" min="0" inputmode="numeric">
+        <p class="form-hint">空欄なら 0 として扱います。</p>
+      </div>
+      <div class="result-actions">
+        <button class="btn btn-primary" onclick="InventoryApp.save()" style="width:100%">保存する</button>
+        <button class="btn btn-secondary" onclick="InventoryApp.backToList()" style="width:100%">戻る</button>
+        <button class="btn btn-danger btn-sm" id="btn-delete" onclick="InventoryApp.removeCurrent()" style="width:100%;display:none">この品目を削除</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../shared/form-utils.js?v=2"></script>
+  <script src="app.js?v=1"></script>
+</body>
+</html>

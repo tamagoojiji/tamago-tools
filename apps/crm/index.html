@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>かんたん顧客管理 | たまごツール</title>
+  <meta name="description" content="お客様の連絡先・メモを登録。最終連絡から間があいた人を「そろそろ連絡」でお知らせ。データはスマホ内に保存。">
+  <link rel="stylesheet" href="../../style.css?v=1">
+  <style>
+    /* CRMアプリ固有 */
+    .search-box {
+      width: 100%; padding: 10px 14px; font-size: 14px;
+      border: 1px solid var(--border); border-radius: 12px;
+      margin-bottom: 14px; background: var(--card-bg);
+    }
+    .follow-badge {
+      display: inline-block; padding: 2px 9px; font-size: 11px; font-weight: 700;
+      border-radius: 20px; margin-top: 3px;
+    }
+    .follow-due { background: #FFEBEE; color: #C62828; }
+    .follow-ok { background: #E8F5E9; color: #2E7D32; }
+    .tag-chip {
+      display: inline-block; background: #FFF3E0; color: var(--primary-dark);
+      font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 12px;
+      margin: 2px 4px 0 0;
+    }
+    .contact-btn {
+      padding: 7px 12px; font-size: 12px; font-weight: 700;
+      border: 1px solid var(--border); border-radius: 20px;
+      background: var(--card-bg); color: var(--secondary); cursor: pointer; white-space: nowrap;
+    }
+    .contact-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .disclaimer { font-size: 11px; color: #999; text-align: center; line-height: 1.6; margin-top: 16px; }
+    .settings-card {
+      background: var(--card-bg); border-radius: 12px; padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 12px;
+    }
+    .settings-title { font-size: 14px; font-weight: 700; color: var(--secondary); margin-bottom: 8px; }
+    .settings-text { font-size: 12px; color: var(--text-light); line-height: 1.6; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #C62828; }
+    .btn-sm { padding: 8px 16px; font-size: 13px; }
+    .data-card.follow-now { border: 1px solid #F2B8B8; }
+    .inline-num { width: 80px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <!-- イントロ画面 -->
+  <div id="intro-screen" data-screen class="screen">
+    <div class="container">
+      <div class="intro-card">
+        <div class="intro-icon">🧑‍🤝‍🧑</div>
+        <h1 class="intro-title">かんたん顧客管理</h1>
+        <p class="intro-desc">
+          お客様の連絡先・メモを登録。<br>
+          連絡が空いた人を「そろそろ連絡」でお知らせ。
+        </p>
+        <div class="intro-meta">
+          <span>📇 連絡先メモ</span>
+          <span>🔔 フォロー漏れ防止</span>
+        </div>
+        <button class="btn btn-primary start-btn" onclick="CrmApp.start()">使ってみる</button>
+        <p class="disclaimer">※データはお使いの端末（ブラウザ）内にのみ保存されます。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- メイン画面 -->
+  <div id="main-screen" data-screen class="screen hidden">
+    <div class="container">
+      <div class="tab-nav">
+        <button class="tab-btn active" id="tab-btn-list" onclick="CrmApp.switchTab('list')">顧客一覧</button>
+        <button class="tab-btn" id="tab-btn-settings" onclick="CrmApp.switchTab('settings')">設定</button>
+      </div>
+
+      <!-- 顧客一覧タブ -->
+      <div id="tab-list" class="tab-content active">
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-label">登録顧客</div><div class="stat-value" id="stat-total">0<span class="stat-unit">人</span></div></div>
+          <div class="stat-card"><div class="stat-label">要フォロー</div><div class="stat-value" id="stat-follow">0<span class="stat-unit">人</span></div></div>
+        </div>
+        <input type="text" id="search-input" class="search-box" placeholder="🔍 名前・連絡先・タグで検索" oninput="CrmApp.render()">
+        <div id="crm-list"></div>
+        <button class="add-btn" onclick="CrmApp.openEdit()">＋ 顧客を追加</button>
+      </div>
+
+      <!-- 設定タブ -->
+      <div id="tab-settings" class="tab-content">
+        <div class="settings-card">
+          <div class="settings-title">フォロー間隔</div>
+          <p class="settings-text" style="margin-bottom:10px">最終連絡日からこの日数を過ぎた顧客を「そろそろ連絡」として表示します。</p>
+          <input type="number" id="f-threshold" class="form-input inline-num" min="1" inputmode="numeric"> 日
+          <button class="btn btn-secondary btn-sm" onclick="CrmApp.saveThreshold()" style="margin-left:8px">保存</button>
+        </div>
+        <div class="settings-card">
+          <div class="settings-title">データ管理</div>
+          <p class="settings-text" style="margin-bottom:12px">登録した顧客データはこの端末のブラウザ内にのみ保存されています。すべて削除します。</p>
+          <button class="btn btn-danger btn-sm" onclick="CrmApp.clearAll()">全データを削除</button>
+        </div>
+        <div class="cta-section">
+          <img src="../../images/icon.png" alt="たまご" class="cta-icon">
+          <p class="cta-text">手作業をもっとラクにするヒントを発信中！</p>
+          <a href="https://www.instagram.com/tamago.app" target="_blank" rel="noopener" class="cta-btn">@tamago.app をフォロー</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 編集画面 -->
+  <div id="edit-screen" data-screen class="screen hidden">
+    <div class="container">
+      <h2 class="section-title" style="text-align:center" id="edit-title">顧客を追加</h2>
+      <div class="form-group">
+        <label class="form-label">名前 <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="f-name" class="form-input" placeholder="例：山田 花子">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">連絡手段</label>
+          <select id="f-contact-type" class="form-input form-select">
+            <option value="電話">電話</option>
+            <option value="メール">メール</option>
+            <option value="LINE">LINE</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">連絡先</label>
+          <input type="text" id="f-contact" class="form-input" placeholder="番号 / ID など">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">タグ</label>
+        <input type="text" id="f-tags" class="form-input" placeholder="例：常連, VIP（カンマ区切り）">
+      </div>
+      <div class="form-group">
+        <label class="form-label">最終連絡日</label>
+        <input type="date" id="f-last" class="form-input">
+      </div>
+      <div class="form-group">
+        <label class="form-label">メモ</label>
+        <input type="text" id="f-memo" class="form-input" placeholder="好み・前回の内容など（任意）">
+      </div>
+      <div class="result-actions">
+        <button class="btn btn-primary" onclick="CrmApp.save()" style="width:100%">保存する</button>
+        <button class="btn btn-secondary" onclick="CrmApp.backToList()" style="width:100%">戻る</button>
+        <button class="btn btn-danger btn-sm" id="btn-delete" onclick="CrmApp.removeCurrent()" style="width:100%;display:none">この顧客を削除</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../shared/form-utils.js?v=2"></script>
+  <script src="app.js?v=1"></script>
+</body>
+</html>

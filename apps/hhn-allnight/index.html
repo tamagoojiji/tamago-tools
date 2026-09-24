@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="2026-09-25 ハロウィーン・ホラー・ナイト オールナイトの時間割メーカー。見る回を選んで画像で保存">
+<meta property="og:title" content="HHNオールナイト プラン作成">
+<meta property="og:description" content="スペシャル・ショー、アカデミー、3ステージの回を選ぶと時間割になり、画像で保存できる（作成：たまご @tamago_parktips）">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>HHNオールナイト プラン</title>
+<style>
+:root{--bg:#120a1e;--sf:#1e1230;--ln:#3a2a55;--or:#ff9b2f;--pk:#ff4d8d;--gr:#6ee7a0;--bl:#7dc4ff;--ye:#ffe066;--vi:#d7c4ff;--tx:#fff7ea;--mu:#cbbde0;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;font-size:15px;line-height:1.5;padding-inline:16px;padding-block:16px 120px;max-width:640px;margin-inline:auto}
+h1{font-size:22px;line-height:1.25;margin:0;color:var(--or);text-wrap:balance}
+.lead{margin:6px 0 0;color:var(--mu);font-size:14px}
+.howto{margin:14px 0 0;padding:10px 12px;background:var(--sf);border-left:4px solid var(--gr);border-radius:0 8px 8px 0;font-size:14px}
+.howto b{color:var(--gr)}
+h2{font-size:16px;margin:22px 0 6px;color:var(--ye);border-left:6px solid var(--pk);padding-left:10px;line-height:1.3}
+.h2note{font-size:13px;color:var(--mu);margin:0 0 4px}
+.grp{padding:10px 0 12px;border-top:1px solid var(--ln)}
+.grp .gn{font-size:16px;font-weight:800}
+.grp .gs{font-size:13px;color:var(--mu);margin-top:2px}
+.pick{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.pick button{min-height:44px;min-width:78px;border-radius:10px;border:2px solid var(--ln);background:var(--sf);color:var(--tx);font:inherit;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;padding:4px 10px;cursor:pointer;line-height:1.2}
+.pick button:hover{border-color:var(--gr)}
+.pick button:focus-visible{outline:3px solid var(--ye);outline-offset:2px}
+.pick button[aria-pressed="true"]{background:var(--gr);color:#0d1f16;border-color:var(--gr)}
+.pick.sp button[aria-pressed="true"]{background:var(--vi);color:#1a1030;border-color:var(--vi)}
+.pick button[aria-pressed="true"]::before{content:"✓ "}
+.pick button[aria-disabled="true"]{opacity:.55;cursor:not-allowed;text-decoration:line-through;border-style:dashed}
+.pick.hold button{min-width:0;flex:1 1 20%;font-size:13px;font-weight:700;padding:4px 4px;white-space:nowrap}
+.lbl{font-size:12px;color:var(--mu);margin-top:10px}
+.pick button small{display:block;font-size:11px;font-weight:700;text-decoration:none;color:var(--pk);line-height:1.2}
+.row{display:grid;grid-template-columns:64px 1fr;gap:0 10px;padding:12px 0;border-top:1px solid var(--ln)}
+.row.hold{padding:8px 0;background:rgba(255,224,102,.06)}
+.t{font-size:20px;font-weight:800;color:var(--or);font-variant-numeric:tabular-nums;line-height:1.2;padding-top:1px}
+.t.mv{color:var(--bl)}.t.hd{color:var(--ye);font-size:17px}.t.sp{color:var(--vi)}
+.n{font-size:16px;font-weight:700;line-height:1.35}
+.hold .n{font-size:15px}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;margin-left:6px;vertical-align:2px;color:#120a1e}
+.tag.sp{background:var(--vi)}.tag.sh{background:var(--pk)}.tag.mv2{background:var(--bl)}.tag.rs{background:var(--ye)}.tag.hd2{background:var(--ye)}
+.p{font-size:14px;color:var(--mu);margin-top:3px}
+.w{color:var(--pk);font-weight:700}
+.empty{padding:12px;border:1px dashed var(--ln);border-radius:8px;color:var(--mu);font-size:14px;margin-top:6px}
+.notes{margin-top:18px;padding:12px 14px;background:var(--sf);border-radius:10px;font-size:14px}
+.notes ul{margin:6px 0 0;padding-left:20px}
+.notes li{margin-bottom:4px}
+.notes b{color:var(--or)}
+.credit{margin-top:14px;font-size:12px;color:var(--mu);text-align:right}
+.bar{position:fixed;left:0;right:0;bottom:0;background:rgba(18,10,30,.94);border-top:1px solid var(--ln);padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center}
+.bar>div{display:flex;gap:10px;width:100%;max-width:608px}
+.btn{min-height:48px;border-radius:12px;font:inherit;font-weight:800;font-size:16px;cursor:pointer;padding:8px 14px}
+.pri{flex:1;background:var(--or);color:#1a0d00;border:0}
+.pri:hover{background:#ffb15a}
+.sec{background:transparent;color:var(--tx);border:2px solid var(--ln)}
+.sec:hover{border-color:var(--mu)}
+.btn:focus-visible{outline:3px solid var(--ye);outline-offset:2px}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10;overflow:auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px))}
+.ov .in{max-width:520px;margin:0 auto}
+.ov .tip{background:var(--sf);border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:10px}
+.ov .tip b{color:var(--ye)}
+.ov img{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--ln)}
+.ov .close{margin:12px auto 0;display:block;width:100%}
+</style>
+</head>
+<body>
+
+<h1>🎃 ハロウィーン・ホラー・ナイト オールナイト 9/25(金) プラン作成</h1>
+<p class="lead">19:00 → 翌5:00　ショー中心（ライドなし）で自分の時間割を作る</p>
+<div class="howto">①スペシャル・ショーの回を選ぶ → ②アカデミーと3ステージで<b>見る回をタップ</b>し、場所取りの時間を選ぶ（枠ごと時間割に入る）→ ③「この内容で画像にする」→ 画像を<b>長押しして「写真」に保存</b></div>
+
+<h2>スペシャル・ショー（鑑賞券が要る）</h2>
+<p class="h2note">選ぶと、並び時間・会場入りと重なる回は下の一覧で選べなくなります（取り消し線）。持っていない人は選ばなくてOK</p>
+<div id="special"></div>
+
+<h2>アカデミーと3ステージ</h2>
+<div id="picker"></div>
+
+<h2>時間割</h2>
+<div id="sched"></div>
+
+<div class="notes"><b>覚えておくこと</b>
+<ul>
+<li>ザ・ダーク（ウォーターワールド・座席自由）は<b>40分前から並ぶ</b>・約20分。ザ・ブライト（モンスター・ライブ会場・座席指定）は<b>15分前に会場入り</b>・約20分</li>
+<li>場所取りは各ショーごとに なし／30分前／45分前／60分前 から選ぶ。枠が前の予定と重なると ⚠ が付く</li>
+<li>3ステージ（クロミ／メルズ前／JPエリア）は毎時45分ごろの予想（公式はプレイバック毎時50分）</li>
+<li>21:00〜22:00はロストワールド・レストラン側のJPゲートからしか入れない</li>
+<li>レストランは4:00で全店閉店。飲み物は3時台までに確保</li>
+</ul></div>
+<div class="credit">出典：USJ公式「当日のご案内」（2026-09-24確認）／作成：たまご @tamago_parktips</div>
+
+<div class="bar"><div>
+<button class="btn sec" id="reset" type="button">選択を全部消す</button>
+<button class="btn pri" id="make" type="button">この内容で画像にする</button>
+</div></div>
+
+<div class="ov" id="ov" hidden><div class="in">
+<div class="tip"><b>画像を長押し</b> →「"写真"に追加」で保存。PCなら右クリック → 画像を保存</div>
+<img id="out" alt="選んだ回入りのスケジュール画像">
+<button class="btn sec close" id="close" type="button">画像を閉じてプランに戻る</button>
+</div></div>
+
+<script>
+(function(){
+  // 分 = 20:00起点
+  function hm(m){var h=Math.floor(m/60)+20, mm=((m%60)+60)%60; h=((h%24)+24)%24; return h+":"+(mm<10?"0":"")+mm;}
+  var SPECIAL=[
+    {k:"dark",name:"ザ・ダーク",place:"ウォーターワールド",before:40,dur:20,times:[150,240,320],sub:"ウォーターワールド・座席自由 → 40分前から並ぶ・約20分",pre:"ザ・ダークの列に並ぶ",preNote:"座席自由なので40分前から"},
+    {k:"bright",name:"ザ・ブライト",place:"ユニバーサル・モンスター・ライブ・ロックンロール・ショー会場",before:15,dur:20,times:[160,270,380],sub:"モンスター・ライブ会場・座席指定 → 15分前に会場入り・約20分（開場は各回1時間前）",pre:"ザ・ブライト会場入り",preNote:"座席指定なので15分前に"}
+  ];
+  var GROUPS=[
+    {k:"acad",name:"HHNアカデミー 〜絶叫の15年〜",place:"グラマシーパーク",hold:0,dur:20,times:[-40,20,200,260,320],sub:"公式時刻（19:20／20:20／23:20／0:20／1:20）"},
+    {k:"kuromi",name:"クロミステージ",place:"クロミステージ",hold:0,dur:15,times:[-15,45,165,225,285,345,405,465,525],sub:"毎時45分ごろの予想（公式はプレイバック毎時50分）"},
+    {k:"mels",name:"メルズ前ステージ",place:"メルズ前ステージ",hold:0,dur:15,times:[-15,45,165,225,285,345,405,465,525],sub:"毎時45分ごろの予想"},
+    {k:"jp",name:"ジュラシック・パーク・エリア",place:"ジュラシック・パーク・エリア",hold:0,dur:15,times:[-15,45,165,225,285,345,405,465,525],sub:"毎時45分ごろの予想"}
+  ];
+  var KEY="hhn-allnight-plan-v7", sel={};
+  try{var s=JSON.parse(localStorage.getItem(KEY)||"null"); if(s&&typeof s==="object") sel=s;}catch(e){}
+  GROUPS.forEach(function(g){ if(!Array.isArray(sel[g.k])) sel[g.k]=[]; });
+  SPECIAL.forEach(function(g){ if(typeof sel[g.k]!=="number") sel[g.k]=-1; });
+  if(!sel.hold||typeof sel.hold!=="object") sel.hold={};
+  var HOLDS=[{v:0,n:"なし"},{v:30,n:"30分前"},{v:45,n:"45分前"},{v:60,n:"60分前"}];
+  function holdOf(g){ return sel.hold[g.k]||0; }
+  function setHold(k,v){ sel.hold[k]=v; save(); render(); }
+  function save(){ try{localStorage.setItem(KEY,JSON.stringify(sel));}catch(e){} }
+
+  // 確定ブロック（選んだスペシャル・ショーの並び〜終演）
+  function fixBlocks(except){
+    var b=[];
+    SPECIAL.forEach(function(g){ if(g.k===except) return; var t=sel[g.k]; if(t<0) return; b.push({s:t-g.before,e:t+g.dur,n:g.name+"（"+hm(t-g.before)+"〜"+hm(t+g.dur)+"）",who:g.name}); });
+    return b;
+  }
+  function blocked(t,dur,except){ var B=fixBlocks(except); for(var i=0;i<B.length;i++){ if(t<B[i].e && t+dur>B[i].s) return B[i]; } return null; }
+  function has(k,t){ return sel[k].indexOf(t)>=0; }
+  function pruneBlocked(){ GROUPS.forEach(function(g){ sel[g.k]=sel[g.k].filter(function(t){ return !blocked(t,g.dur); }); }); }
+  function toggleSpecial(k,t){
+    sel[k]=(sel[k]===t)?-1:t;
+    pruneBlocked(); save(); render();
+  }
+  function toggle(k,t){
+    if(has(k,t)){ sel[k]=sel[k].filter(function(x){return x!==t;}); }
+    else{
+      sel[k].push(t);
+      if(k!=="acad") GROUPS.forEach(function(g){ if(g.k!=="acad"&&g.k!==k) sel[g.k]=sel[g.k].filter(function(x){return x!==t;}); });
+    }
+    save(); render();
+  }
+  function el(tag,cls,text){var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e;}
+
+  // ---- 時間割の生成 ----
+  function events(){
+    var ev=[];
+    ev.push({t:-60,end:-60,name:"スタート",tag:"mv",note:"ストリート・ゾンビは18:00〜21:00。歩きながら遭遇"});
+    ev.push({t:120,end:120,name:"入場（オールナイト開始）",tag:"mv",note:"ストリート・ゾンビは22:00〜5:00通し"});
+    ev.push({t:480,end:480,name:"休憩・ストリート・ゾンビ",tag:"rs",note:"4:00で全レストラン閉店。営業しないレストランが休憩場所になる予定"});
+    ev.push({t:540,end:540,name:"オールナイト終了",tag:"mv",note:"おつかれさま🥚"});
+    SPECIAL.forEach(function(g){
+      var t=sel[g.k]; if(t<0) return;
+      ev.push({t:t-g.before,end:t,name:g.pre,tag:"sp",note:g.place+"。"+g.preNote+"（"+hm(t-g.before)+"〜"+hm(t)+"）"});
+      ev.push({t:t,end:t+g.dur,name:g.name,tag:"sp",note:"約"+g.dur+"分（〜"+hm(t+g.dur)+"）"});
+    });
+    GROUPS.forEach(function(g){
+      sel[g.k].forEach(function(t){
+        var isA=g.k==="acad";
+        ev.push({t:t,end:t+g.dur,name:isA?"HHNアカデミー":"プレイバック・ゾンビ・デ・ダンス",tag:"sh",
+          note:(isA?"グラマシーパーク":g.place+"（予想。公式は"+hm(t+5)+"）")+(t===45?"。21:00閉園なので終わったらJPゲートへ":""),
+          stage:isA?null:g.place, hold:holdOf(g), holdName:isA?"アカデミー（グラマシー）":g.place});
+      });
+    });
+    var holds=[];
+    ev.forEach(function(e){
+      if(!e.hold) return;
+      var s=e.t-e.hold, clip="";
+      if(e.t>=120 && s<120){s=120; clip="入場後すぐ";}
+      else if(s<-60){s=-60; clip="19:00から";}
+      holds.push({t:s,end:e.t,name:"場所取り "+e.holdName,tag:"hd",isHold:true,mins:e.hold,for:e,clip:clip});
+    });
+    holds.forEach(function(h){
+      var c=[];
+      ev.concat(holds).forEach(function(o){ if(o===h||o===h.for) return; if(o.end<=o.t) return; if(h.t<o.end && h.end>o.t) c.push(o.name); });
+      h.conf=c;
+    });
+    var all=ev.concat(holds);
+    all.sort(function(a,b){return a.t-b.t || ((a.isHold?1:0)-(b.isHold?1:0));});
+    return all;
+  }
+
+  // ---- DOM描画 ----
+  var TAGN={sh:"ショー",sp:"鑑賞券",mv:"移動",rs:"休憩",hd:"場所取り"}, TAGC={sh:"sh",sp:"sp",mv:"mv2",rs:"rs",hd:"hd2"};
+  function renderSpecial(){
+    var root=document.getElementById("special"); while(root.firstChild) root.removeChild(root.firstChild);
+    SPECIAL.forEach(function(g){
+      var box=el("div","grp"); box.appendChild(el("div","gn",g.name)); box.appendChild(el("div","gs",g.sub));
+      var pk=el("div","pick sp"); pk.setAttribute("role","group"); pk.setAttribute("aria-label",g.name+"の回");
+      g.times.forEach(function(t){
+        var b=el("button","",hm(t)); b.type="button"; var bl=blocked(t-g.before,g.before+g.dur,g.k);
+        if(bl){ b.setAttribute("aria-disabled","true"); b.setAttribute("aria-pressed","false"); b.appendChild(el("small","",bl.who+"と重なる")); b.title=bl.n+"と重なるため選べません"; }
+        else{ b.setAttribute("aria-pressed",sel[g.k]===t?"true":"false"); b.addEventListener("click",function(){toggleSpecial(g.k,t);}); }
+        pk.appendChild(b);
+      });
+      box.appendChild(pk); root.appendChild(box);
+    });
+  }
+  function renderPicker(){
+    var root=document.getElementById("picker"); while(root.firstChild) root.removeChild(root.firstChild);
+    GROUPS.forEach(function(g){
+      var box=el("div","grp"); box.appendChild(el("div","gn",g.name)); box.appendChild(el("div","gs",g.sub));
+      var pk=el("div","pick"); pk.setAttribute("role","group"); pk.setAttribute("aria-label",g.name+"の回");
+      g.times.forEach(function(t){
+        var b=el("button","",hm(t)); b.type="button"; var bl=blocked(t,g.dur);
+        if(bl){ b.setAttribute("aria-disabled","true"); b.setAttribute("aria-pressed","false"); b.appendChild(el("small","",bl.who+"と重なる")); b.title=bl.n+"と重なるため選べません"; }
+        else{ b.setAttribute("aria-pressed",has(g.k,t)?"true":"false"); b.addEventListener("click",function(){toggle(g.k,t);}); }
+        pk.appendChild(b);
+      });
+      box.appendChild(pk);
+      var hl=el("div","lbl","場所取り（開演の何分前から動かないか）"); box.appendChild(hl);
+      var hp=el("div","pick hold"); hp.setAttribute("role","group"); hp.setAttribute("aria-label",g.name+"の場所取り");
+      HOLDS.forEach(function(o){ var b=el("button","",o.n); b.type="button"; b.setAttribute("aria-pressed",holdOf(g)===o.v?"true":"false"); b.addEventListener("click",function(){setHold(g.k,o.v);}); hp.appendChild(b); });
+      box.appendChild(hp);
+      root.appendChild(box);
+    });
+  }
+  function renderSched(){
+    var root=document.getElementById("sched"); while(root.firstChild) root.removeChild(root.firstChild);
+    var list=events(), lastSec="";
+    var picked=GROUPS.some(function(g){return sel[g.k].length>0;})||SPECIAL.some(function(g){return sel[g.k]>=0;});
+    if(!picked) root.appendChild(el("div","empty","まだ何も選んでいません。上の一覧から見る回をタップすると、場所取りの枠ごとここに入ります"));
+    list.forEach(function(e){
+      var sec=e.t<120?"通常営業のホラー・ナイト（〜21:00閉園）":"オールナイト（22:00〜5:00）";
+      if(sec!==lastSec){root.appendChild(el("h2","",sec)); lastSec=sec;}
+      var row=el("div","row"+(e.isHold?" hold":""));
+      var t=el("div","t"+(e.tag==="mv"?" mv":"")+(e.isHold?" hd":"")+(e.tag==="sp"?" sp":""), e.isHold?hm(e.t)+"〜":hm(e.t)); row.appendChild(t);
+      var body=el("div"); var n=el("div","n",e.name); n.appendChild(el("span","tag "+TAGC[e.tag],TAGN[e.tag])); body.appendChild(n);
+      if(e.isHold){
+        body.appendChild(el("div","p",e.mins+"分前から"+(e.clip?"（"+e.clip+"）":"")+"。"+hm(e.t)+"〜"+hm(e.end)+" は動かない"));
+        if(e.conf.length){var w=el("div","p"); w.appendChild(el("span","w","⚠ "+e.conf.join("／")+" と重なる → 終わり次第移動")); body.appendChild(w);}
+      }else{
+        body.appendChild(el("div","p",e.note));
+      }
+      row.appendChild(body); root.appendChild(row);
+    });
+  }
+  function render(){ renderSpecial(); renderPicker(); renderSched(); }
+  render();
+  document.getElementById("reset").addEventListener("click",function(){ GROUPS.forEach(function(g){sel[g.k]=[];}); SPECIAL.forEach(function(g){sel[g.k]=-1;}); sel.hold={}; save(); render(); });
+
+  // ---- 画像化（Canvas 2D・1080px幅） ----
+  var FONT='-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif';
+  function wrap(ctx,text,maxW){var lines=[],cur="";for(var i=0;i<text.length;i++){var ch=text[i];if(ctx.measureText(cur+ch).width>maxW&&cur){lines.push(cur);cur=ch;}else cur+=ch;}lines.push(cur);return lines;}
+  function pill(ctx,x,y,text,bg,fg,fs){ctx.font="700 "+fs+"px "+FONT;var w=ctx.measureText(text).width+24,h=fs+14;ctx.fillStyle=bg;ctx.beginPath();ctx.roundRect(x,y,w,h,h/2);ctx.fill();ctx.fillStyle=fg;ctx.textBaseline="middle";ctx.fillText(text,x+12,y+h/2+1);ctx.textBaseline="alphabetic";return w;}
+  var COL={sh:"#ff4d8d",sp:"#d7c4ff",mv:"#7dc4ff",rs:"#ffe066",hd:"#ffe066"};
+  function build(){
+    var W=1080,P=44,C1=170,X2=P+C1+14,MW=W-P-X2;
+    var list=events(); var mc=document.createElement("canvas").getContext("2d");
+    var y=P+44+56+30, L=[], lastSec="";
+    list.forEach(function(e){
+      var sec=e.t<120?"通常営業のホラー・ナイト（〜21:00閉園）":"オールナイト（22:00〜5:00）";
+      if(sec!==lastSec){y+=54; L.push({sec:sec,y:y}); y+=14; lastSec=sec;}
+      var top=y; y+=14;
+      mc.font="800 "+(e.isHold?27:31)+"px "+FONT; var nl=wrap(mc,e.name,MW-150); y+=nl.length*(e.isHold?36:40);
+      var pt=e.isHold?(e.mins+"分前から"+(e.clip?"（"+e.clip+"）":"")+"。"+hm(e.t)+"〜"+hm(e.end)+" は動かない"):e.note;
+      var pl=[]; if(pt){mc.font="500 24px "+FONT; pl=wrap(mc,pt,MW); y+=pl.length*32;}
+      var cl=[]; if(e.isHold&&e.conf.length){mc.font="700 24px "+FONT; cl=wrap(mc,"⚠ "+e.conf.join("／")+" と重なる → 終わり次第移動",MW); y+=cl.length*32;}
+      if(e.stage) y+=52;
+      y+=14; L.push({e:e,y:top,nl:nl,pl:pl,cl:cl,bottom:y});
+    });
+    var spLine=SPECIAL.map(function(g){ var t=sel[g.k]; return g.name+" "+(t<0?"なし":hm(t)+"（"+hm(t-g.before)+"から"+(g.k==="dark"?"並ぶ":"会場入り")+"）"); }).join("／");
+    var holdLine=GROUPS.filter(function(g){return holdOf(g)>0&&sel[g.k].length>0;}).map(function(g){return (g.k==="acad"?"アカデミー":g.place)+" "+holdOf(g)+"分前";}).join("／");
+    y+=24; var NOTES=["・"+spLine].concat(holdLine?["・場所取り: "+holdLine]:[]).concat(["・3ステージは毎時45分ごろの予想（公式はプレイバック毎時50分）","・21:00〜22:00はロストワールド・レストラン側のJPゲートのみ。レストランは4:00で全店閉店"]);
+    mc.font="500 23px "+FONT; var notes=[]; NOTES.forEach(function(s){wrap(mc,s,W-2*P-44).forEach(function(l){notes.push(l);});});
+    var notesY=y, notesH=54+notes.length*34+24; y+=notesH; var H=y+48;
+    var cv=document.createElement("canvas"); cv.width=W; cv.height=H; var ctx=cv.getContext("2d");
+    ctx.fillStyle="#120a1e"; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#ff9b2f"; ctx.font="800 44px "+FONT; ctx.fillText("🎃 HHN オールナイト 2026.9.25(金)",P,P+44);
+    ctx.fillStyle="#cbbde0"; ctx.font="600 26px "+FONT; ctx.fillText("ハロウィーン・ホラー・ナイト 〜オールナイト〜　19:00 → 翌5:00　マイプラン",P,P+84);
+    L.forEach(function(r){
+      if(r.sec){ctx.fillStyle="#ff4d8d";ctx.fillRect(P,r.y-34,10,44);ctx.fillStyle="#ffe066";ctx.font="800 32px "+FONT;ctx.fillText(r.sec,P+24,r.y);return;}
+      var e=r.e;
+      if(e.isHold){ctx.fillStyle="rgba(255,224,102,.08)";ctx.fillRect(P,r.y,W-2*P,r.bottom-r.y);}
+      ctx.fillStyle="#3a2a55"; ctx.fillRect(P,r.y,W-2*P,3);
+      var ty=r.y+14, fs=e.isHold?27:31, lh=e.isHold?36:40;
+      ctx.fillStyle=e.isHold?"#ffe066":(e.tag==="mv"?"#7dc4ff":(e.tag==="sp"?"#d7c4ff":"#ff9b2f")); ctx.font="800 "+(e.isHold?32:40)+"px "+FONT; ctx.fillText(e.isHold?hm(e.t)+"〜":hm(e.t),P,ty+34);
+      ctx.fillStyle="#fff7ea"; ctx.font="800 "+fs+"px "+FONT; r.nl.forEach(function(ln,i){ctx.fillText(ln,X2,ty+32+i*lh);});
+      ctx.font="800 "+fs+"px "+FONT; var tw=ctx.measureText(r.nl[r.nl.length-1]).width;
+      pill(ctx,X2+tw+12,ty+32+(r.nl.length-1)*lh-26,TAGN[e.tag],COL[e.tag],"#120a1e",21);
+      var py=ty+32+r.nl.length*lh; ctx.fillStyle="#cbbde0"; ctx.font="500 24px "+FONT; r.pl.forEach(function(ln,i){ctx.fillText(ln,X2,py+i*32);});
+      var cy=py+r.pl.length*32; ctx.fillStyle="#ff4d8d"; ctx.font="700 24px "+FONT; r.cl.forEach(function(ln,i){ctx.fillText(ln,X2,cy+i*32);});
+      if(e.stage){pill(ctx,X2,cy+r.cl.length*32+2,"📍 "+e.stage,"#6ee7a0","#0d1f16",26);}
+    });
+    ctx.fillStyle="#1e1230"; ctx.beginPath(); ctx.roundRect(P,notesY,W-2*P,notesH,16); ctx.fill();
+    ctx.fillStyle="#ff9b2f"; ctx.font="800 26px "+FONT; ctx.fillText("覚えておくこと",P+22,notesY+40);
+    ctx.fillStyle="#fff7ea"; ctx.font="500 23px "+FONT; notes.forEach(function(s,i){ctx.fillText(s,P+22,notesY+78+i*34);});
+    ctx.fillStyle="#cbbde0"; ctx.font="500 20px "+FONT; ctx.textAlign="right"; ctx.fillText("出典：USJ公式「当日のご案内」／作成：たまご @tamago_parktips",W-P,H-16); ctx.textAlign="left";
+    return cv;
+  }
+  var ov=document.getElementById("ov"), out=document.getElementById("out");
+  function make(){ try{ out.src=build().toDataURL("image/png"); ov.hidden=false; window.scrollTo(0,0); }catch(e){ document.getElementById("make").textContent="画像化に失敗。もう一度タップ"; } }
+  document.getElementById("make").addEventListener("click",make);
+  document.getElementById("close").addEventListener("click",function(){ ov.hidden=true; });
+  if(location.hash==="#preview") make();
+})();
+</script>
+
+</body>
+</html>
